@@ -1,5 +1,7 @@
 """Endpoints for local-only application preferences."""
 
+import asyncio
+
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
@@ -8,6 +10,7 @@ from app.models.settings import (
     DownloadDirectoryUpdateRequest,
     LocalSettingsResponse,
 )
+from app.system.directory_chooser import DirectoryChooserError
 from app.system.download_directory import DownloadDirectoryError
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -34,6 +37,29 @@ async def update_download_directory(
     try:
         settings = await service.update_download_output_root(payload.path)
     except DownloadDirectoryError as error:
+        response = ValidationErrorResponse(
+            error=ValidationErrorDetail(code=error.code, message=error.message)
+        )
+        return JSONResponse(
+            status_code=error.status_code, content=response.model_dump()
+        )
+    return LocalSettingsResponse(
+        download_output_root=str(settings.download_output_root)
+    )
+
+
+@router.post("/download-directory/choose", response_model=LocalSettingsResponse)
+async def choose_download_directory(
+    request: Request,
+) -> LocalSettingsResponse | JSONResponse:
+    settings_service = request.app.state.local_settings_service
+    chooser = request.app.state.directory_chooser
+    if settings_service is None or chooser is None:
+        return _unavailable_response()
+    try:
+        selected = await asyncio.to_thread(chooser.choose)
+        settings = await settings_service.update_download_output_root(selected)
+    except (DirectoryChooserError, DownloadDirectoryError) as error:
         response = ValidationErrorResponse(
             error=ValidationErrorDetail(code=error.code, message=error.message)
         )

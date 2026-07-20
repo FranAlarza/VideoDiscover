@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 from app.config import Settings
 from app.database.settings_repository import LocalSettings
 from app.main import create_app
+from app.system.directory_chooser import DirectoryChooserError
 from app.system.download_directory import DownloadDirectoryError
 
 
@@ -68,3 +69,52 @@ def test_settings_api_reports_unavailable_service() -> None:
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "settings_unavailable"
+
+
+def test_settings_api_chooses_and_persists_a_native_directory(tmp_path: Path) -> None:
+    service = AsyncMock()
+    service.get.return_value = LocalSettings(tmp_path / "downloads")
+    selected = tmp_path / "selected"
+    service.update_download_output_root.return_value = LocalSettings(selected)
+    chooser = AsyncMock()
+    chooser.choose = lambda: selected
+
+    with TestClient(
+        create_app(
+            Settings(environment="test"),
+            local_settings_service=service,
+            directory_chooser=chooser,
+        )
+    ) as client:
+        response = client.post("/api/settings/download-directory/choose")
+
+    assert response.status_code == 200
+    assert response.json() == {"download_output_root": str(selected)}
+    service.update_download_output_root.assert_awaited_once_with(selected)
+
+
+def test_settings_api_maps_native_chooser_cancellation(tmp_path: Path) -> None:
+    service = AsyncMock()
+    service.get.return_value = LocalSettings(tmp_path / "downloads")
+    chooser = AsyncMock()
+
+    def cancel():
+        raise DirectoryChooserError(
+            "directory_selection_cancelled",
+            "No se ha cambiado la carpeta de descargas.",
+            status_code=409,
+        )
+
+    chooser.choose = cancel
+    with TestClient(
+        create_app(
+            Settings(environment="test"),
+            local_settings_service=service,
+            directory_chooser=chooser,
+        )
+    ) as client:
+        response = client.post("/api/settings/download-directory/choose")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "directory_selection_cancelled"
+    service.update_download_output_root.assert_not_awaited()

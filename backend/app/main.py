@@ -28,6 +28,7 @@ from app.events.broker import DownloadEventBroker
 from app.media.inspection import MediaInspectionService
 from app.media.validation import MediaUrlValidationService
 from app.system.diagnostics import DependencyDiagnosticsService
+from app.system.directory_chooser import MacOSDirectoryChooser
 from app.system.download_directory import DownloadDirectoryValidator
 from app.system.file_actions import DownloadFileActionService
 from app.system.settings_service import LocalSettingsService
@@ -42,6 +43,7 @@ def create_app(
     download_worker: DownloadWorker | None = None,
     download_file_action_service: DownloadFileActionService | None = None,
     local_settings_service: LocalSettingsService | None = None,
+    directory_chooser: MacOSDirectoryChooser | None = None,
 ) -> FastAPI:
     """Create an isolated API application instance."""
     runtime_settings = settings or Settings.from_environment()
@@ -53,6 +55,7 @@ def create_app(
     runtime_worker = download_worker
     runtime_event_broker = DownloadEventBroker()
     runtime_local_settings = local_settings_service
+    runtime_directory_chooser = directory_chooser or MacOSDirectoryChooser()
     sqlite_repository = None
     runtime_file_actions = download_file_action_service or DownloadFileActionService(
         runtime_settings.download_output_root
@@ -112,6 +115,7 @@ def create_app(
         application.state.download_event_broker = runtime_event_broker
         application.state.download_file_action_service = runtime_file_actions
         application.state.local_settings_service = runtime_local_settings
+        application.state.directory_chooser = runtime_directory_chooser
         if runtime_local_settings is not None:
             local_settings = await runtime_local_settings.get()
             validated_root = DownloadDirectoryValidator(

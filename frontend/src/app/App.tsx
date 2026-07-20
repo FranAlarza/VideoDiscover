@@ -16,6 +16,11 @@ import {
   type DownloadTask,
 } from "@/api/downloads";
 import { inspectMedia, MediaApiError, type MediaInspection } from "@/api/media";
+import {
+  chooseDownloadDirectory,
+  getLocalSettings,
+  SettingsApiError,
+} from "@/api/settings";
 import { useBackendHealth } from "@/hooks/useBackendHealth";
 
 const statusCopy = {
@@ -402,6 +407,8 @@ export function App() {
           </button>
         </form>
 
+        <SettingsPanel />
+
         {inspectState.status === "error" ? (
           <div className="notice notice--error" role="alert">
             {inspectState.error}
@@ -525,8 +532,8 @@ export function App() {
           </div>
         ) : null}
 
-        <section className="download-history" aria-labelledby="history-title">
-          <div className="download-history__header">
+        <details className="download-history" open>
+          <summary className="download-history__header">
             <div>
               <p className="eyebrow">Actividad local</p>
               <h2 id="history-title">Historial</h2>
@@ -534,7 +541,7 @@ export function App() {
             {downloadHistory.tasks.length > 0 ? (
               <span>{formatHistoryCount(downloadHistory.tasks.length)}</span>
             ) : null}
-          </div>
+          </summary>
 
           {downloadHistory.status === "loading" ? (
             <p className="download-history__empty" role="status">
@@ -577,7 +584,7 @@ export function App() {
               ))}
             </div>
           ) : null}
-        </section>
+        </details>
 
         <details className="about">
           <summary>Acerca de y uso responsable</summary>
@@ -654,6 +661,84 @@ export function App() {
         </div>
       ) : null}
     </main>
+  );
+}
+
+function SettingsPanel() {
+  const [directory, setDirectory] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "loading" | "ready" | "changing">("idle");
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadSettings() {
+    if (status !== "idle") return;
+    setStatus("loading");
+    try {
+      const settings = await getLocalSettings();
+      setDirectory(settings.download_output_root);
+      setError(null);
+    } catch (caught) {
+      setError(
+        caught instanceof SettingsApiError
+          ? caught.message
+          : "No se ha podido cargar la configuración.",
+      );
+    } finally {
+      setStatus("ready");
+    }
+  }
+
+  async function changeDirectory() {
+    if (status === "changing") return;
+    setStatus("changing");
+    setError(null);
+    try {
+      const settings = await chooseDownloadDirectory();
+      setDirectory(settings.download_output_root);
+    } catch (caught) {
+      setError(
+        caught instanceof SettingsApiError
+          ? caught.message
+          : "No se ha podido cambiar la carpeta de descargas.",
+      );
+    } finally {
+      setStatus("ready");
+    }
+  }
+
+  return (
+    <details
+      className="settings-panel"
+      onToggle={(event) => {
+        if (event.currentTarget.open) void loadSettings();
+      }}
+    >
+      <summary>Configuración</summary>
+      <div className="settings-panel__content">
+        <div className="settings-panel__directory">
+          <span>Carpeta de descargas</span>
+          <p title={directory ?? undefined}>
+            {status === "loading" ? "Cargando…" : (directory ?? "No disponible")}
+          </p>
+        </div>
+        <button
+          className="secondary-button"
+          type="button"
+          disabled={status === "loading" || status === "changing"}
+          onClick={() => void changeDirectory()}
+        >
+          {status === "changing" ? "Esperando selección…" : "Cambiar carpeta"}
+        </button>
+      </div>
+      {error ? (
+        <p className="settings-panel__error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      <p className="settings-panel__hint">
+        El cambio se aplicará a las próximas descargas. No mueve los archivos ya
+        guardados.
+      </p>
+    </details>
   );
 }
 

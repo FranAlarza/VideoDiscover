@@ -87,6 +87,7 @@ POST /api/downloads/{id}/reveal
 GET  /api/events
 GET  /api/settings
 PUT  /api/settings/download-directory
+POST /api/settings/download-directory/choose
 ```
 
 La ubicación absoluta del resultado se conserva únicamente en SQLite para que

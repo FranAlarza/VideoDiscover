@@ -18,4 +18,4 @@ Estado: implementado como base interna y conectado al ejecutor.
 - [x] Reconstruir la ubicación de resultados históricos al migrar.
 - [x] Mantener «Abrir» y «Mostrar en Finder» ligados a la ubicación original.
 - [x] Exponer la configuración mediante una API local validada.
-- [ ] Añadir selección nativa de carpeta y conectarla a la interfaz.
+- [x] Añadir selección nativa de carpeta en macOS y conectarla a la interfaz.

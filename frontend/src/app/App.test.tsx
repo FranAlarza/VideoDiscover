@@ -48,6 +48,69 @@ describe("App", () => {
     expect(options?.signal).toBeInstanceOf(AbortSignal);
   });
 
+  it("loads and changes the download directory with the native chooser", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn<typeof fetch>((input, init) => {
+      if (input === "/health") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ status: "ok", service: "video-downloader-api" }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      if (input === "/api/downloads") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      if (input === "/api/settings") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ download_output_root: "/Users/demo/Downloads" }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      if (
+        input === "/api/settings/download-directory/choose" &&
+        init?.method === "POST"
+      ) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ download_output_root: "/Users/demo/Videos" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected request: ${requestUrl(input)}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await user.click(screen.getByText("Configuración"));
+
+    expect(await screen.findByText("/Users/demo/Downloads")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Cambiar carpeta" }));
+    expect(await screen.findByText("/Users/demo/Videos")).toBeVisible();
+  });
+
+  it("allows the history section to be collapsed", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", createHistoryMock([]));
+
+    render(<App />);
+    const historyHeading = screen.getByRole("heading", { name: "Historial" });
+    const history = historyHeading.closest("details");
+
+    expect(history).toHaveAttribute("open");
+    await user.click(historyHeading);
+    expect(history).not.toHaveAttribute("open");
+  });
+
   it.each([
     ["a network failure", () => Promise.reject(new TypeError("Failed to fetch"))],
     [
