@@ -86,3 +86,16 @@ Estado: implementado y verificado manualmente con una descarga real.
 - [x] Mostrar los errores estables del backend sin perder la tarjeta actual.
 - [x] Cubrir el cliente HTTP y la interacción principal con pruebas automatizadas.
 - [x] Verificar una cancelación real y la limpieza de temporales.
+
+## 3.5 Historial local
+
+Estado: implementado y verificado manualmente.
+
+- [x] Cargar las descargas persistidas al abrir la aplicación.
+- [x] Mostrar estados de carga, vacío y error.
+- [x] Ordenar desde la descarga más reciente y evitar duplicados por identificador.
+- [x] Añadir nuevas tareas y actualizar las existentes mediante SSE.
+- [x] Mantener progreso, resultado, fallo y cancelación independientes por tarjeta.
+- [x] Adaptar la lista a títulos, nombres de archivo y pantallas estrechas.
+- [x] Cubrir carga inicial, sincronización y acciones por tarea con pruebas.
+- [x] Verificar persistencia, actualización y cancelación con varias descargas reales.

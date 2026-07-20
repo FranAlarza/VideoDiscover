@@ -25,7 +25,7 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: "Video Downloader" })).toBeVisible();
     expect(screen.getByLabelText("URL del video")).toBeVisible();
-    expect(screen.getByRole("status")).toHaveTextContent("Comprobando backend");
+    expect(screen.getByText("Comprobando backend")).toBeVisible();
   });
 
   it("shows the connected state for the exact health contract", async () => {
@@ -40,8 +40,9 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Backend conectado")).toBeVisible();
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, options] = fetchMock.mock.calls[0] ?? [];
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [url, options] =
+      fetchMock.mock.calls.find(([input]) => input === "/health") ?? [];
     expect(url).toBe("/health");
     expect(options?.method).toBe("GET");
     expect(options?.signal).toBeInstanceOf(AbortSignal);
@@ -76,6 +77,14 @@ describe("App", () => {
               headers: { "Content-Type": "application/json" },
             },
           ),
+        );
+      }
+      if (input === "/api/downloads") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
         );
       }
 
@@ -135,9 +144,9 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Analizar" }));
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Pega una URL de YouTube o TikTok para analizarla.",
-    );
+    expect(
+      screen.getByText("Pega una URL de YouTube o TikTok para analizarla."),
+    ).toBeVisible();
   });
 
   it("shows the backend inspection error message", async () => {
@@ -154,6 +163,14 @@ describe("App", () => {
                 headers: { "Content-Type": "application/json" },
               },
             ),
+          );
+        }
+        if (input === "/api/downloads") {
+          return Promise.resolve(
+            new Response(JSON.stringify({ items: [] }), {
+              status: 200,
+              headers: { "Content-Type": "application/json" },
+            }),
           );
         }
 
@@ -191,7 +208,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Descargar" }));
 
     expect(screen.getByRole("dialog", { name: "Uso responsable" })).toBeVisible();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
     await user.click(screen.getByRole("button", { name: "Aceptar y descargar" }));
 
@@ -297,7 +314,7 @@ describe("App", () => {
     expect(await screen.findByText("Completada")).toBeVisible();
     expect(screen.getByText("100%")).toBeVisible();
     expect(screen.getByText(/AL BORDE del INFARTO/)).toBeVisible();
-    expect(screen.getByLabelText("Progreso de descarga")).toHaveValue(100);
+    expect(screen.getByLabelText("Progreso de Demo descargable")).toHaveValue(100);
   });
 
   it("creates an audio download with the selected bitrate", async () => {
@@ -338,7 +355,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Descargar" }));
 
     expect(screen.getByRole("button", { name: "Iniciando descarga" })).toBeDisabled();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
   it("cancels a queued download and hides the action in the terminal state", async () => {
@@ -433,6 +450,81 @@ describe("App", () => {
     expect(screen.getAllByRole("heading", { name: "Demo descargable" })).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Cancelar descarga" })).toBeEnabled();
   });
+
+  it("loads, deduplicates and orders persisted downloads newest first", async () => {
+    const olderTask = {
+      ...downloadTask,
+      id: "older-task",
+      title: "Descarga antigua",
+      created_at: "2026-07-19T10:00:00Z",
+    };
+    const newerTask = {
+      ...downloadTask,
+      id: "newer-task",
+      title: "Descarga reciente",
+      created_at: "2026-07-20T10:00:00Z",
+    };
+    const updatedOlderTask = { ...olderTask, title: "Descarga antigua actualizada" };
+    vi.stubGlobal("fetch", createHistoryMock([olderTask, newerTask, updatedOlderTask]));
+
+    render(<App />);
+
+    expect(await screen.findByText("2 descargas")).toBeVisible();
+    expect(screen.queryByText("Descarga antigua")).toBeNull();
+    expect(
+      screen.getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent),
+    ).toEqual(["Descarga reciente", "Descarga antigua actualizada"]);
+  });
+
+  it("adds and updates history entries from backend events without duplicates", async () => {
+    vi.stubGlobal("fetch", createHistoryMock([]));
+    render(<App />);
+    await screen.findByText(/Todavía no hay descargas/);
+
+    FakeEventSource.instances[0]?.emit("download.created", {
+      occurred_at: "2026-07-20T16:37:42Z",
+      task: downloadTask,
+    });
+    expect(
+      await screen.findByRole("heading", { name: "Demo descargable" }),
+    ).toBeVisible();
+
+    FakeEventSource.instances[0]?.emit("download.updated", {
+      occurred_at: "2026-07-20T16:38:00Z",
+      task: {
+        ...downloadTask,
+        status: "cancelled",
+        queue_position: null,
+        current_attempt: { ...downloadTask.current_attempt, status: "cancelled" },
+      },
+    });
+
+    expect(await screen.findByText("Cancelada")).toBeVisible();
+    expect(screen.getByText("1 descarga")).toBeVisible();
+    expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(1);
+  });
+
+  it("shows a recoverable history error without hiding the rest of the app", async () => {
+    vi.stubGlobal(
+      "fetch",
+      createHistoryMock([], {
+        status: 500,
+        body: {
+          error: {
+            code: "history_unavailable",
+            message: "No se ha podido leer el historial local.",
+          },
+        },
+      }),
+    );
+
+    render(<App />);
+
+    expect(
+      await screen.findByText("No se ha podido leer el historial local."),
+    ).toBeVisible();
+    expect(screen.getByLabelText("URL del video")).toBeEnabled();
+  });
 });
 
 class FakeEventSource extends EventTarget {
@@ -482,7 +574,7 @@ function createDownloadFlowMock(
   downloadResponse?: Promise<Response>,
   cancellationResponse?: Promise<Response>,
 ) {
-  return vi.fn<typeof fetch>((input) => {
+  return vi.fn<typeof fetch>((input, init) => {
     if (input === "/health") {
       return Promise.resolve(
         new Response(JSON.stringify({ status: "ok", service: "video-downloader-api" }), {
@@ -494,6 +586,14 @@ function createDownloadFlowMock(
     if (input === "/api/media/inspect") {
       return Promise.resolve(
         new Response(JSON.stringify(inspection), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }
+    if (input === "/api/downloads" && init?.method === "GET") {
+      return Promise.resolve(
+        new Response(JSON.stringify({ items: [] }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),
@@ -527,6 +627,28 @@ function createDownloadFlowMock(
         { status: 201, headers: { "Content-Type": "application/json" } },
       ),
     );
+  });
+}
+
+function createHistoryMock(tasks: unknown[], error?: { status: number; body: unknown }) {
+  return vi.fn<typeof fetch>((input) => {
+    if (input === "/health") {
+      return Promise.resolve(
+        new Response(JSON.stringify({ status: "ok", service: "video-downloader-api" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }
+    if (input === "/api/downloads") {
+      return Promise.resolve(
+        new Response(JSON.stringify(error?.body ?? { items: tasks }), {
+          status: error?.status ?? 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }
+    return Promise.reject(new Error(`Unexpected request: ${requestUrl(input)}`));
   });
 }
 

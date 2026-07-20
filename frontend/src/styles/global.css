@@ -303,6 +303,47 @@ h1 {
   margin-top: 22px;
 }
 
+.download-history {
+  margin-top: 28px;
+}
+
+.download-history__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.download-history__header .eyebrow {
+  margin-bottom: 8px;
+}
+
+.download-history__header h2 {
+  margin: 0;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+}
+
+.download-history__header > span {
+  color: var(--ink-muted);
+  font-size: 0.86rem;
+  font-weight: 750;
+}
+
+.download-history__empty {
+  margin: 16px 0 0;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  color: var(--ink-muted);
+  padding: 24px;
+  text-align: center;
+}
+
+.download-history__list {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
 .download-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -318,7 +359,7 @@ h1 {
   min-width: 0;
 }
 
-.download-card h2 {
+.download-card h3 {
   margin: 0;
   max-width: 820px;
   font-size: 1.15rem;
@@ -331,6 +372,16 @@ h1 {
   grid-template-columns: repeat(auto-fit, minmax(130px, max-content));
   gap: 12px 24px;
   margin: 0;
+}
+
+.download-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-bottom: 7px;
+  color: var(--ink-muted);
+  font-size: 0.76rem;
+  font-weight: 700;
 }
 
 .download-card__stats div {
@@ -466,8 +517,7 @@ h1 {
 
   .workspace__header,
   .inspect-form,
-  .media-panel,
-  .download-card {
+  .media-panel {
     grid-template-columns: 1fr;
   }
 

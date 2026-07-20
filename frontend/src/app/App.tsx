@@ -8,6 +8,7 @@ import {
   cancelDownload,
   createDownload,
   DownloadApiError,
+  getDownloads,
   type DownloadTask,
 } from "@/api/downloads";
 import { inspectMedia, MediaApiError, type MediaInspection } from "@/api/media";
@@ -27,11 +28,16 @@ type InspectState =
 
 type OutputMode = "video" | "audio";
 
-type DownloadState =
-  | { status: "idle"; task: null; error: null }
-  | { status: "loading"; task: null; error: null }
-  | { status: "success"; task: DownloadTask; error: null }
-  | { status: "error"; task: null; error: string };
+type DownloadCreationState =
+  | { status: "idle"; error: null }
+  | { status: "loading"; error: null }
+  | { status: "error"; error: string };
+
+interface DownloadHistoryState {
+  status: "loading" | "ready" | "error";
+  tasks: DownloadTask[];
+  error: string | null;
+}
 
 const usageNoticeVersion = "2026-07-20";
 const usageNoticeStorageKey = "video-downloader.usage-notice-version";
@@ -48,15 +54,20 @@ export function App() {
   const [usageNoticeAccepted, setUsageNoticeAccepted] = useState(
     () => readAcceptedUsageNotice() === usageNoticeVersion,
   );
-  const [downloadState, setDownloadState] = useState<DownloadState>({
-    status: "idle",
-    task: null,
+  const [downloadCreationState, setDownloadCreationState] =
+    useState<DownloadCreationState>({
+      status: "idle",
+      error: null,
+    });
+  const [downloadHistory, setDownloadHistory] = useState<DownloadHistoryState>({
+    status: "loading",
+    tasks: [],
     error: null,
   });
+  const [cancellingTaskIds, setCancellingTaskIds] = useState<string[]>([]);
+  const [cancelErrors, setCancelErrors] = useState<Record<string, string>>({});
   const [downloadEventsStatus, setDownloadEventsStatus] =
     useState<DownloadEventConnectionStatus>("connecting");
-  const [cancellingTaskId, setCancellingTaskId] = useState<string | null>(null);
-  const [cancelError, setCancelError] = useState<string | null>(null);
   const [inspectState, setInspectState] = useState<InspectState>({
     status: "idle",
     media: null,
@@ -64,27 +75,50 @@ export function App() {
   });
 
   useEffect(() => {
+    const controller = new AbortController();
+
+    void getDownloads(controller.signal)
+      .then((tasks) => {
+        setDownloadHistory((current) => ({
+          status: "ready",
+          tasks: mergeDownloadTasks(tasks, current.tasks),
+          error: null,
+        }));
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setDownloadHistory((current) => ({
+          ...current,
+          status: "error",
+          error:
+            error instanceof DownloadApiError
+              ? error.message
+              : "No se ha podido cargar el historial.",
+        }));
+      });
+
     const client = subscribeToDownloadEvents({
       onTask: (task) => {
-        setDownloadState((current) =>
-          current.status === "success" && current.task.id === task.id
-            ? { ...current, task }
-            : current,
-        );
+        setDownloadHistory((current) => ({
+          status: "ready",
+          tasks: upsertDownloadTask(current.tasks, task),
+          error: null,
+        }));
       },
       onSnapshot: (tasks) => {
-        setDownloadState((current) => {
-          if (current.status !== "success") {
-            return current;
-          }
-          const task = tasks.find((candidate) => candidate.id === current.task.id);
-          return task ? { ...current, task } : current;
+        setDownloadHistory({
+          status: "ready",
+          tasks: normalizeDownloadTasks(tasks),
+          error: null,
         });
       },
       onConnectionStatus: setDownloadEventsStatus,
     });
 
-    return () => client.close();
+    return () => {
+      controller.abort();
+      client.close();
+    };
   }, []);
 
   const qualityOptions = useMemo(
@@ -106,9 +140,7 @@ export function App() {
     }
 
     setInspectState({ status: "loading", media: null, error: null });
-    setDownloadState({ status: "idle", task: null, error: null });
-    setCancellingTaskId(null);
-    setCancelError(null);
+    setDownloadCreationState({ status: "idle", error: null });
 
     try {
       const media = await inspectMedia(trimmedUrl);
@@ -126,19 +158,18 @@ export function App() {
   }
 
   async function startDownload() {
-    if (downloadState.status === "loading" || !inspectState.media) {
+    if (downloadCreationState.status === "loading" || !inspectState.media) {
       return;
     }
     if (outputMode === "video" && selectedQuality === null) {
-      setDownloadState({
+      setDownloadCreationState({
         status: "error",
-        task: null,
         error: "Selecciona una calidad de vídeo disponible.",
       });
       return;
     }
 
-    setDownloadState({ status: "loading", task: null, error: null });
+    setDownloadCreationState({ status: "loading", error: null });
     try {
       const task = await createDownload({
         url: url.trim(),
@@ -146,47 +177,51 @@ export function App() {
         video_quality: outputMode === "video" ? selectedQuality : null,
         audio_bitrate: outputMode === "audio" ? audioBitrate : null,
       });
-      setCancelError(null);
-      setDownloadState({ status: "success", task, error: null });
+      setDownloadHistory((current) => ({
+        status: "ready",
+        tasks: upsertDownloadTask(current.tasks, task),
+        error: null,
+      }));
+      setDownloadCreationState({ status: "idle", error: null });
     } catch (error) {
       const message =
         error instanceof DownloadApiError
           ? error.message
           : "No se ha podido conectar con el backend.";
-      setDownloadState({ status: "error", task: null, error: message });
+      setDownloadCreationState({ status: "error", error: message });
     }
   }
 
-  async function handleCancelDownload() {
-    if (
-      downloadState.status !== "success" ||
-      cancellingTaskId === downloadState.task.id ||
-      !isActiveDownload(downloadState.task)
-    ) {
+  async function handleCancelDownload(downloadTask: DownloadTask) {
+    if (cancellingTaskIds.includes(downloadTask.id) || !isActiveDownload(downloadTask)) {
       return;
     }
 
-    const taskId = downloadState.task.id;
-    setCancellingTaskId(taskId);
-    setCancelError(null);
+    const taskId = downloadTask.id;
+    setCancellingTaskIds((current) => [...current, taskId]);
+    setCancelErrors((current) => omitRecordKey(current, taskId));
 
     try {
       const task = await cancelDownload(taskId);
-      setDownloadState((current) =>
-        current.status === "success" && current.task.id === taskId
-          ? { ...current, task }
-          : current,
-      );
+      setDownloadHistory((current) => ({
+        status: "ready",
+        tasks: upsertDownloadTask(current.tasks, task),
+        error: null,
+      }));
       if (!isActiveDownload(task)) {
-        setCancellingTaskId(null);
+        setCancellingTaskIds((current) =>
+          current.filter((candidate) => candidate !== taskId),
+        );
       }
     } catch (error) {
       const message =
         error instanceof DownloadApiError
           ? error.message
           : "No se ha podido conectar con el backend.";
-      setCancelError(message);
-      setCancellingTaskId(null);
+      setCancelErrors((current) => ({ ...current, [taskId]: message }));
+      setCancellingTaskIds((current) =>
+        current.filter((candidate) => candidate !== taskId),
+      );
     }
   }
 
@@ -212,11 +247,7 @@ export function App() {
   const isInspecting = inspectState.status === "loading";
   const canChooseVideo = qualityOptions.length > 0;
   const canChooseAudio = inspectState.media?.audio_available === true;
-  const isCreatingDownload = downloadState.status === "loading";
-  const isCancellingDownload =
-    downloadState.status === "success" &&
-    isActiveDownload(downloadState.task) &&
-    cancellingTaskId === downloadState.task.id;
+  const isCreatingDownload = downloadCreationState.status === "loading";
 
   return (
     <main className="app-shell">
@@ -365,89 +396,56 @@ export function App() {
           </section>
         ) : null}
 
-        {downloadState.status === "error" ? (
+        {downloadCreationState.status === "error" ? (
           <div className="notice notice--error" role="alert">
-            {downloadState.error}
+            {downloadCreationState.error}
           </div>
         ) : null}
 
-        {downloadState.status === "success" ? (
-          <section className="download-card" aria-labelledby="download-title">
-            <div className="download-card__header">
-              <p className="eyebrow">Descarga creada</p>
-              <h2 id="download-title">{downloadState.task.title}</h2>
+        <section className="download-history" aria-labelledby="history-title">
+          <div className="download-history__header">
+            <div>
+              <p className="eyebrow">Actividad local</p>
+              <h2 id="history-title">Historial</h2>
             </div>
-            <dl className="download-card__stats">
-              <div>
-                <dt>Estado</dt>
-                <dd>{downloadStatusCopy[downloadState.task.status]}</dd>
-              </div>
-              <div>
-                <dt>Formato</dt>
-                <dd>{formatSelection(downloadState.task)}</dd>
-              </div>
-              {downloadState.task.queue_position !== null ? (
-                <div>
-                  <dt>Posición en cola</dt>
-                  <dd>{downloadState.task.queue_position}</dd>
-                </div>
-              ) : null}
-              {visibleProgress(downloadState.task) !== null ? (
-                <div>
-                  <dt>Progreso</dt>
-                  <dd>{formatPercentage(visibleProgress(downloadState.task) ?? 0)}</dd>
-                </div>
-              ) : null}
-            </dl>
-            {downloadState.task.current_attempt.result ? (
-              <div className="download-card__file">
-                <span>Archivo</span>
-                <p>{downloadState.task.current_attempt.result.filename}</p>
-              </div>
+            {downloadHistory.tasks.length > 0 ? (
+              <span>{formatHistoryCount(downloadHistory.tasks.length)}</span>
             ) : null}
-            {visibleProgress(downloadState.task) !== null ? (
-              <progress
-                className="download-progress"
-                max={100}
-                value={visibleProgress(downloadState.task) ?? 0}
-                aria-label="Progreso de descarga"
-              />
-            ) : null}
-            {downloadState.task.current_attempt.failure ? (
-              <p className="download-card__message" role="alert">
-                {downloadState.task.current_attempt.failure.message}
-              </p>
-            ) : null}
-            {cancelError ? (
-              <p
-                className="download-card__message download-card__message--error"
-                role="alert"
-              >
-                {cancelError}
-              </p>
-            ) : null}
-            {downloadEventsStatus === "disconnected" &&
-            isActiveDownload(downloadState.task) ? (
-              <p className="download-card__message">
-                Reconectando con el backend para actualizar el progreso...
-              </p>
-            ) : null}
-            {isActiveDownload(downloadState.task) ? (
-              <div className="download-card__actions">
-                <button
-                  className="secondary-button secondary-button--danger"
-                  type="button"
-                  disabled={isCancellingDownload}
-                  onClick={() => {
-                    void handleCancelDownload();
-                  }}
-                >
-                  {isCancellingDownload ? "Cancelando…" : "Cancelar descarga"}
-                </button>
-              </div>
-            ) : null}
-          </section>
-        ) : null}
+          </div>
+
+          {downloadHistory.status === "loading" ? (
+            <p className="download-history__empty" role="status">
+              Cargando historial…
+            </p>
+          ) : null}
+
+          {downloadHistory.status === "error" ? (
+            <div className="notice notice--error" role="alert">
+              {downloadHistory.error}
+            </div>
+          ) : null}
+
+          {downloadHistory.status === "ready" && downloadHistory.tasks.length === 0 ? (
+            <p className="download-history__empty">
+              Todavía no hay descargas. Analiza un enlace para crear la primera.
+            </p>
+          ) : null}
+
+          {downloadHistory.tasks.length > 0 ? (
+            <div className="download-history__list">
+              {downloadHistory.tasks.map((task) => (
+                <DownloadCard
+                  key={task.id}
+                  task={task}
+                  eventsDisconnected={downloadEventsStatus === "disconnected"}
+                  isCancelling={cancellingTaskIds.includes(task.id)}
+                  cancelError={cancelErrors[task.id] ?? null}
+                  onCancel={handleCancelDownload}
+                />
+              ))}
+            </div>
+          ) : null}
+        </section>
 
         <details className="about">
           <summary>Acerca de y uso responsable</summary>
@@ -490,6 +488,102 @@ export function App() {
   );
 }
 
+interface DownloadCardProps {
+  task: DownloadTask;
+  eventsDisconnected: boolean;
+  isCancelling: boolean;
+  cancelError: string | null;
+  onCancel: (task: DownloadTask) => Promise<void>;
+}
+
+function DownloadCard({
+  task,
+  eventsDisconnected,
+  isCancelling,
+  cancelError,
+  onCancel,
+}: DownloadCardProps) {
+  const titleId = `download-title-${task.id}`;
+  const progress = visibleProgress(task);
+
+  return (
+    <article className="download-card" aria-labelledby={titleId}>
+      <div className="download-card__header">
+        <div className="download-card__meta">
+          <span>{platformCopy[task.platform]}</span>
+          <span>{formatCreatedAt(task.created_at)}</span>
+        </div>
+        <h3 id={titleId}>{task.title}</h3>
+      </div>
+      <dl className="download-card__stats">
+        <div>
+          <dt>Estado</dt>
+          <dd>{downloadStatusCopy[task.status]}</dd>
+        </div>
+        <div>
+          <dt>Formato</dt>
+          <dd>{formatSelection(task)}</dd>
+        </div>
+        {task.queue_position !== null ? (
+          <div>
+            <dt>Posición en cola</dt>
+            <dd>{task.queue_position}</dd>
+          </div>
+        ) : null}
+        {progress !== null ? (
+          <div>
+            <dt>Progreso</dt>
+            <dd>{formatPercentage(progress)}</dd>
+          </div>
+        ) : null}
+      </dl>
+      {task.current_attempt.result ? (
+        <div className="download-card__file">
+          <span>Archivo</span>
+          <p>{task.current_attempt.result.filename}</p>
+        </div>
+      ) : null}
+      {progress !== null ? (
+        <progress
+          className="download-progress"
+          max={100}
+          value={progress}
+          aria-label={`Progreso de ${task.title}`}
+        />
+      ) : null}
+      {task.current_attempt.failure ? (
+        <p className="download-card__message" role="alert">
+          {task.current_attempt.failure.message}
+        </p>
+      ) : null}
+      {cancelError ? (
+        <p className="download-card__message download-card__message--error" role="alert">
+          {cancelError}
+        </p>
+      ) : null}
+      {eventsDisconnected && isActiveDownload(task) ? (
+        <p className="download-card__message">
+          Reconectando con el backend para actualizar el progreso...
+        </p>
+      ) : null}
+      {isActiveDownload(task) ? (
+        <div className="download-card__actions">
+          <button
+            className="secondary-button secondary-button--danger"
+            type="button"
+            disabled={isCancelling}
+            onClick={() => {
+              void onCancel(task);
+            }}
+          >
+            {isCancelling ? "Cancelando…" : "Cancelar descarga"}
+          </button>
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
 const platformCopy = {
   youtube: "YouTube",
   tiktok: "TikTok",
@@ -525,6 +619,55 @@ function visibleProgress(task: DownloadTask): number | null {
 
 function isActiveDownload(task: DownloadTask): boolean {
   return ["queued", "downloading", "processing"].includes(task.status);
+}
+
+function upsertDownloadTask(
+  tasks: DownloadTask[],
+  updatedTask: DownloadTask,
+): DownloadTask[] {
+  return normalizeDownloadTasks([
+    ...tasks.filter((task) => task.id !== updatedTask.id),
+    updatedTask,
+  ]);
+}
+
+function mergeDownloadTasks(
+  initialTasks: DownloadTask[],
+  newerTasks: DownloadTask[],
+): DownloadTask[] {
+  return normalizeDownloadTasks([...initialTasks, ...newerTasks]);
+}
+
+function normalizeDownloadTasks(tasks: DownloadTask[]): DownloadTask[] {
+  const tasksById = new Map<string, DownloadTask>();
+  for (const task of tasks) {
+    tasksById.set(task.id, task);
+  }
+  return [...tasksById.values()].sort(
+    (left, right) =>
+      Date.parse(right.created_at) - Date.parse(left.created_at) ||
+      right.id.localeCompare(left.id),
+  );
+}
+
+function omitRecordKey(
+  record: Record<string, string>,
+  keyToOmit: string,
+): Record<string, string> {
+  return Object.fromEntries(Object.entries(record).filter(([key]) => key !== keyToOmit));
+}
+
+function formatHistoryCount(count: number): string {
+  return count === 1 ? "1 descarga" : `${count} descargas`;
+}
+
+function formatCreatedAt(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Fecha desconocida";
+  return new Intl.DateTimeFormat("es-ES", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
 }
 
 function readAcceptedUsageNotice(): string | null {
