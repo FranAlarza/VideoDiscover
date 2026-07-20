@@ -118,6 +118,8 @@ La disponibilidad se comprueba inmediatamente antes de reservar la salida. Tempo
 | `disk_full` | Espacio insuficiente | No hay suficiente espacio en el disco. | Liberar espacio |
 | `output_not_writable` | Sin permisos de escritura | No se puede escribir en la carpeta seleccionada. | Cambiar carpeta |
 | `network_error` | Conexión interrumpida | La conexión se interrumpió durante la descarga. | Reintentar |
+| `inspection_timeout` | El extractor supera el límite | El análisis ha superado el tiempo permitido. | Reintentar |
+| `inspection_unavailable` | No se puede iniciar el extractor | El servicio de análisis no está disponible. | Revisar dependencias |
 | `temporarily_blocked` | Rechazo temporal de plataforma | La plataforma ha rechazado temporalmente la solicitud. | Reintentar más tarde |
 | `cleanup_failed` | Quedaron temporales propios | No se pudieron eliminar todos los archivos temporales. | Mostrar ubicación |
 | `unknown_error` | Error no clasificado | No se pudo completar la descarga. | Reintentar o consultar registro |

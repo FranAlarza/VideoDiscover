@@ -168,15 +168,107 @@ ventana de DNS rebinding. La allowlist estricta de plataformas reduce la
 superficie; una prueba SSRF de integración seguirá siendo obligatoria antes de la
 aceptación final.
 
-## 1.4 Siguiente entrega — Análisis de metadatos
+## 1.4 Análisis de metadatos
 
-- [ ] Invocar `yt-dlp` con `download=False`.
-- [ ] Usar únicamente una URL validada y canónica.
-- [ ] Traducir los metadatos al contrato propio del MVP.
-- [ ] Detectar playlists o contenido no disponible devuelto por el extractor.
-- [ ] Enumerar resoluciones disponibles sin descargar contenido.
-- [ ] Añadir timeout, cancelación y traducción de errores.
-- [ ] Probar con dobles y una URL autorizada controlada.
+- [x] Invocar `yt-dlp` con `download=False`, `skip_download` y modo simulado.
+- [x] Usar únicamente una URL validada y canónica.
+- [x] Ejecutar el extractor en un proceso aislado terminable.
+- [x] Configurar un timeout real de 25 segundos.
+- [x] Pasar explícitamente Node.js 24 al runtime JavaScript.
+- [x] Deshabilitar componentes JavaScript remotos.
+- [x] Traducir metadatos a un contrato propio y limitado.
+- [x] Omitir URLs de formatos, cabeceras, cookies y campos internos.
+- [x] Detectar playlists, directos y respuestas mal formadas.
+- [x] Enumerar resoluciones únicas y disponibilidad de audio.
+- [x] Calcular tamaño estimado solo con datos disponibles.
+- [x] Traducir errores de extractor a códigos y mensajes estables.
+- [x] Impedir que errores crudos de `yt-dlp` lleguen a stderr o al frontend.
+- [x] Añadir pruebas mediante dobles sin acceder a plataformas reales.
+- [x] Comprobar el proceso aislado mediante una petición HTTP real.
+
+### Contrato
+
+```http
+POST /api/media/inspect
+Content-Type: application/json
+
+{"url":"https://www.youtube.com/watch?v=VIDEO_ID"}
+```
+
+```json
+{
+  "platform": "youtube",
+  "media_id": "VIDEO_ID",
+  "title": "Título",
+  "author": "Autor",
+  "duration_seconds": 120,
+  "thumbnail_url": "https://...",
+  "published_at": "2026-07-20",
+  "estimated_size": 1000000,
+  "video_qualities": [1080, 720, 480],
+  "audio_available": true,
+  "is_live": false
+}
+```
+
+Los campos `author`, duración, miniatura, fecha y tamaño son opcionales. Las
+resoluciones se limitan a 2160p, 1440p, 1080p, 720p, 480p y 360p y se devuelven
+sin duplicados.
+
+### Aislamiento
+
+FastAPI valida primero la URL. Después crea un proceso mediante el método
+`spawn`; dentro de ese proceso se usa la API Python de `yt-dlp`. Si el límite se
+supera, el proceso se termina y, si fuera necesario, se mata tras un periodo de
+gracia. De este modo un extractor bloqueado no continúa trabajando en segundo
+plano.
+
+El proceso devuelve metadatos saneados mediante una conexión unidireccional. La
+aplicación transforma inmediatamente esos datos y descarta campos no incluidos
+en el contrato público.
+
+### Evidencia de la entrega
+
+- Pruebas totales del backend: 60 aprobadas.
+- Casos específicos de inspección: 20 aprobados.
+- Ruff lint y formato: aprobados.
+- La configuración prueba `download=False`, `skip_download`, `simulate` y
+  `noplaylist`.
+- La URL entregada al runner es siempre la canónica producida por el validador.
+- Una petición real inició correctamente el proceso aislado y no creó archivos.
+- El vídeo histórico de prueba consultado respondió actualmente como no
+  disponible; la API lo tradujo a HTTP 404 con `media_unavailable`.
+- Una URL activa proporcionada por el usuario superó validación e inspección con
+  HTTP 200: se obtuvieron título, autor, duración, fecha, miniatura, tamaño
+  estimado, audio y calidades 1080p, 720p, 480p y 360p.
+- Después de la inspección real no existían vídeos, audios, `.part` ni `.ytdl` en
+  los directorios del proyecto.
+- Los logs reales solo mostraron las solicitudes saneadas y sus códigos HTTP.
+
+Las pruebas reales positivas de YouTube y TikTok quedan en `PASS` con URLs
+activas proporcionadas por el usuario.
+
+## 1.5 Siguiente entrega — Inspección real autorizada y endurecimiento
+
+- [x] Proporcionar una URL activa y autorizada de YouTube.
+- [x] Proporcionar una URL activa y autorizada de TikTok.
+- [x] Verificar metadatos y resoluciones reales de TikTok.
+- [x] Confirmar mediante el sistema de archivos que YouTube no crea contenido.
+- [x] Confirmar mediante el sistema de archivos que TikTok no crea contenido.
+- [ ] Ejecutar una prueba de timeout real controlada.
+- [ ] Revisar redacción de logs y límites de metadatos con respuestas reales.
+
+### Evidencia real de TikTok
+
+- La query de seguimiento se eliminó correctamente de la URL canónica.
+- La validación y la inspección respondieron HTTP 200.
+- Se obtuvieron título, autor, duración, fecha, miniatura, tamaño y audio.
+- El primer análisis reveló que el vídeo vertical usaba dimensiones no estándar.
+- El mapeo se corrigió para utilizar el lado corto y seleccionar la mejor calidad
+  estándar que no lo supere; el resultado real pasó a ofrecer 480p.
+- Se añadió una prueba de regresión para vídeo vertical.
+- No se crearon vídeos, audios, `.part` ni `.ytdl`.
+- Los logs solo mostraron la solicitud saneada y su código HTTP.
 
 ## Puerta de salida de la fase 1
 

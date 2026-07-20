@@ -34,6 +34,19 @@ Content-Type: application/json
 El endpoint admite vídeos individuales de YouTube y TikTok, valida DNS/IP y
 resuelve de forma limitada los enlaces cortos de TikTok. No descarga contenido.
 
+Para analizar metadatos sin descargar el contenido:
+
+```http
+POST /api/media/inspect
+Content-Type: application/json
+
+{"url":"https://www.youtube.com/watch?v=VIDEO_ID"}
+```
+
+La extracción se ejecuta en un proceso aislado con timeout. La respuesta solo
+contiene el contrato propio de la aplicación; no expone URLs firmadas, cabeceras
+ni el diccionario interno de `yt-dlp`.
+
 ## Verificación
 
 ```bash
