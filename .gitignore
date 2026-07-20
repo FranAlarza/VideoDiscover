@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# Node
+node_modules/
+dist/
+coverage/
+
+# Environment and local data
+.env
+*.db
+*.sqlite
+*.sqlite3
+
+# Downloaded and temporary media
+downloads/*
+!downloads/.gitkeep
+*.part
+*.ytdl
+
+# System and editors
+.DS_Store
+.idea/
+.vscode/
