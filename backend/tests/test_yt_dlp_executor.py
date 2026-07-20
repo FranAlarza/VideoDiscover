@@ -43,7 +43,14 @@ def test_video_options_are_bounded_and_do_not_overwrite() -> None:
 
     assert options["format"] == (
         "bestvideo[vcodec^=avc1][height<=720]+bestaudio[acodec^=mp4a]/"
-        "best[vcodec^=avc1][acodec^=mp4a][height<=720]"
+        "bestvideo[vcodec^=avc1][height<=720]+bestaudio[acodec^=aac]/"
+        "bestvideo[vcodec^=h264][height<=720]+bestaudio[acodec^=mp4a]/"
+        "bestvideo[vcodec^=h264][height<=720]+bestaudio[acodec^=aac]/"
+        "best[vcodec^=avc1][acodec^=mp4a][height<=720]/"
+        "best[vcodec^=avc1][acodec^=aac][height<=720]/"
+        "best[vcodec^=h264][acodec^=mp4a][height<=720]/"
+        "best[vcodec^=h264][acodec^=aac][height<=720]/"
+        "best[ext=mp4][height<=720]"
     )
     assert options["merge_output_format"] == "mp4"
     assert options["postprocessors"] == []

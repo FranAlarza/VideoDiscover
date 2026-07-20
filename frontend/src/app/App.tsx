@@ -1,5 +1,10 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
+import {
+  subscribeToDownloadEvents,
+  type DownloadEventConnectionStatus,
+} from "@/api/downloadEvents";
+import { createDownload, DownloadApiError, type DownloadTask } from "@/api/downloads";
 import { inspectMedia, MediaApiError, type MediaInspection } from "@/api/media";
 import { useBackendHealth } from "@/hooks/useBackendHealth";
 
@@ -17,16 +22,63 @@ type InspectState =
 
 type OutputMode = "video" | "audio";
 
+type DownloadState =
+  | { status: "idle"; task: null; error: null }
+  | { status: "loading"; task: null; error: null }
+  | { status: "success"; task: DownloadTask; error: null }
+  | { status: "error"; task: null; error: string };
+
+const usageNoticeVersion = "2026-07-20";
+const usageNoticeStorageKey = "video-downloader.usage-notice-version";
+const usageNotice =
+  "Descarga únicamente contenido propio o que tengas derecho a guardar. Esta aplicación no permite eludir DRM, pagos, autenticación ni otros controles de acceso. Tú eres responsable de respetar los derechos de autor, las licencias aplicables y las condiciones de cada plataforma.";
+
 export function App() {
   const backendStatus = useBackendHealth();
   const [url, setUrl] = useState("");
   const [outputMode, setOutputMode] = useState<OutputMode>("video");
   const [selectedQuality, setSelectedQuality] = useState<number | null>(null);
+  const [audioBitrate, setAudioBitrate] = useState(192);
+  const [showUsageNotice, setShowUsageNotice] = useState(false);
+  const [usageNoticeAccepted, setUsageNoticeAccepted] = useState(
+    () => readAcceptedUsageNotice() === usageNoticeVersion,
+  );
+  const [downloadState, setDownloadState] = useState<DownloadState>({
+    status: "idle",
+    task: null,
+    error: null,
+  });
+  const [downloadEventsStatus, setDownloadEventsStatus] =
+    useState<DownloadEventConnectionStatus>("connecting");
   const [inspectState, setInspectState] = useState<InspectState>({
     status: "idle",
     media: null,
     error: null,
   });
+
+  useEffect(() => {
+    const client = subscribeToDownloadEvents({
+      onTask: (task) => {
+        setDownloadState((current) =>
+          current.status === "success" && current.task.id === task.id
+            ? { ...current, task }
+            : current,
+        );
+      },
+      onSnapshot: (tasks) => {
+        setDownloadState((current) => {
+          if (current.status !== "success") {
+            return current;
+          }
+          const task = tasks.find((candidate) => candidate.id === current.task.id);
+          return task ? { ...current, task } : current;
+        });
+      },
+      onConnectionStatus: setDownloadEventsStatus,
+    });
+
+    return () => client.close();
+  }, []);
 
   const qualityOptions = useMemo(
     () => sortQualities(inspectState.media?.video_qualities ?? []),
@@ -47,6 +99,7 @@ export function App() {
     }
 
     setInspectState({ status: "loading", media: null, error: null });
+    setDownloadState({ status: "idle", task: null, error: null });
 
     try {
       const media = await inspectMedia(trimmedUrl);
@@ -63,9 +116,60 @@ export function App() {
     }
   }
 
+  async function startDownload() {
+    if (downloadState.status === "loading" || !inspectState.media) {
+      return;
+    }
+    if (outputMode === "video" && selectedQuality === null) {
+      setDownloadState({
+        status: "error",
+        task: null,
+        error: "Selecciona una calidad de vídeo disponible.",
+      });
+      return;
+    }
+
+    setDownloadState({ status: "loading", task: null, error: null });
+    try {
+      const task = await createDownload({
+        url: url.trim(),
+        output_type: outputMode,
+        video_quality: outputMode === "video" ? selectedQuality : null,
+        audio_bitrate: outputMode === "audio" ? audioBitrate : null,
+      });
+      setDownloadState({ status: "success", task, error: null });
+    } catch (error) {
+      const message =
+        error instanceof DownloadApiError
+          ? error.message
+          : "No se ha podido conectar con el backend.";
+      setDownloadState({ status: "error", task: null, error: message });
+    }
+  }
+
+  function requestDownload() {
+    if (!usageNoticeAccepted) {
+      setShowUsageNotice(true);
+      return;
+    }
+    void startDownload();
+  }
+
+  function acceptUsageNoticeAndDownload() {
+    try {
+      window.localStorage.setItem(usageNoticeStorageKey, usageNoticeVersion);
+    } catch {
+      // The acceptance remains valid for this session if local storage is unavailable.
+    }
+    setUsageNoticeAccepted(true);
+    setShowUsageNotice(false);
+    void startDownload();
+  }
+
   const isInspecting = inspectState.status === "loading";
   const canChooseVideo = qualityOptions.length > 0;
   const canChooseAudio = inspectState.media?.audio_available === true;
+  const isCreatingDownload = downloadState.status === "loading";
 
   return (
     <main className="app-shell">
@@ -186,10 +290,133 @@ export function App() {
                   </select>
                 </label>
               ) : null}
+
+              {outputMode === "audio" && canChooseAudio ? (
+                <label className="field field--compact" htmlFor="audio-bitrate">
+                  <span>Calidad de audio</span>
+                  <select
+                    id="audio-bitrate"
+                    value={audioBitrate}
+                    onChange={(event) => setAudioBitrate(Number(event.target.value))}
+                  >
+                    <option value={128}>128 kbps</option>
+                    <option value={192}>192 kbps</option>
+                    <option value={320}>320 kbps</option>
+                  </select>
+                </label>
+              ) : null}
+
+              <button
+                className="primary-button download-button"
+                type="button"
+                disabled={isCreatingDownload}
+                onClick={requestDownload}
+              >
+                {isCreatingDownload ? "Iniciando descarga" : "Descargar"}
+              </button>
             </div>
           </section>
         ) : null}
+
+        {downloadState.status === "error" ? (
+          <div className="notice notice--error" role="alert">
+            {downloadState.error}
+          </div>
+        ) : null}
+
+        {downloadState.status === "success" ? (
+          <section className="download-card" aria-labelledby="download-title">
+            <div className="download-card__header">
+              <p className="eyebrow">Descarga creada</p>
+              <h2 id="download-title">{downloadState.task.title}</h2>
+            </div>
+            <dl className="download-card__stats">
+              <div>
+                <dt>Estado</dt>
+                <dd>{downloadStatusCopy[downloadState.task.status]}</dd>
+              </div>
+              <div>
+                <dt>Formato</dt>
+                <dd>{formatSelection(downloadState.task)}</dd>
+              </div>
+              {downloadState.task.queue_position !== null ? (
+                <div>
+                  <dt>Posición en cola</dt>
+                  <dd>{downloadState.task.queue_position}</dd>
+                </div>
+              ) : null}
+              {visibleProgress(downloadState.task) !== null ? (
+                <div>
+                  <dt>Progreso</dt>
+                  <dd>{formatPercentage(visibleProgress(downloadState.task) ?? 0)}</dd>
+                </div>
+              ) : null}
+            </dl>
+            {downloadState.task.current_attempt.result ? (
+              <div className="download-card__file">
+                <span>Archivo</span>
+                <p>{downloadState.task.current_attempt.result.filename}</p>
+              </div>
+            ) : null}
+            {visibleProgress(downloadState.task) !== null ? (
+              <progress
+                className="download-progress"
+                max={100}
+                value={visibleProgress(downloadState.task) ?? 0}
+                aria-label="Progreso de descarga"
+              />
+            ) : null}
+            {downloadState.task.current_attempt.failure ? (
+              <p className="download-card__message" role="alert">
+                {downloadState.task.current_attempt.failure.message}
+              </p>
+            ) : null}
+            {downloadEventsStatus === "disconnected" &&
+            isActiveDownload(downloadState.task) ? (
+              <p className="download-card__message">
+                Reconectando con el backend para actualizar el progreso...
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+
+        <details className="about">
+          <summary>Acerca de y uso responsable</summary>
+          <p>{usageNotice}</p>
+        </details>
       </section>
+
+      {showUsageNotice ? (
+        <div className="dialog-backdrop">
+          <section
+            className="usage-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="usage-dialog-title"
+            aria-describedby="usage-dialog-description"
+          >
+            <p className="eyebrow">Antes de continuar</p>
+            <h2 id="usage-dialog-title">Uso responsable</h2>
+            <p id="usage-dialog-description">{usageNotice}</p>
+            <div className="usage-dialog__actions">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => setShowUsageNotice(false)}
+              >
+                Ahora no
+              </button>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={acceptUsageNoticeAndDownload}
+              >
+                Aceptar y descargar
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -198,6 +425,46 @@ const platformCopy = {
   youtube: "YouTube",
   tiktok: "TikTok",
 } as const;
+
+const downloadStatusCopy = {
+  queued: "En cola",
+  downloading: "Descargando",
+  processing: "Procesando archivo",
+  completed: "Completada",
+  failed: "Fallida",
+  cancelled: "Cancelada",
+  interrupted: "Interrumpida",
+} as const;
+
+function formatSelection(task: DownloadTask): string {
+  if (task.selection.output_type === "audio") {
+    return `MP3 · ${task.selection.audio_bitrate ?? 192} kbps`;
+  }
+  return `MP4 · ${task.selection.video_quality ?? "mejor"}p`;
+}
+
+function formatPercentage(value: number): string {
+  return `${Math.round(value)}%`;
+}
+
+function visibleProgress(task: DownloadTask): number | null {
+  if (task.status === "completed") {
+    return 100;
+  }
+  return task.current_attempt.progress.percentage;
+}
+
+function isActiveDownload(task: DownloadTask): boolean {
+  return ["queued", "downloading", "processing"].includes(task.status);
+}
+
+function readAcceptedUsageNotice(): string | null {
+  try {
+    return window.localStorage.getItem(usageNoticeStorageKey);
+  } catch {
+    return null;
+  }
+}
 
 function formatDuration(totalSeconds: number): string {
   const minutes = Math.floor(totalSeconds / 60);

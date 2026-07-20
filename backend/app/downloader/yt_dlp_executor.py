@@ -203,7 +203,17 @@ def build_yt_dlp_download_options(
                 "format": (
                     f"bestvideo[vcodec^=avc1][height<={quality}]"
                     "+bestaudio[acodec^=mp4a]/"
-                    f"best[vcodec^=avc1][acodec^=mp4a][height<={quality}]"
+                    f"bestvideo[vcodec^=avc1][height<={quality}]"
+                    "+bestaudio[acodec^=aac]/"
+                    f"bestvideo[vcodec^=h264][height<={quality}]"
+                    "+bestaudio[acodec^=mp4a]/"
+                    f"bestvideo[vcodec^=h264][height<={quality}]"
+                    "+bestaudio[acodec^=aac]/"
+                    f"best[vcodec^=avc1][acodec^=mp4a][height<={quality}]/"
+                    f"best[vcodec^=avc1][acodec^=aac][height<={quality}]/"
+                    f"best[vcodec^=h264][acodec^=mp4a][height<={quality}]/"
+                    f"best[vcodec^=h264][acodec^=aac][height<={quality}]/"
+                    f"best[ext=mp4][height<={quality}]"
                 ),
                 "merge_output_format": "mp4",
                 "postprocessors": [],

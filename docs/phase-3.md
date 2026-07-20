@@ -46,7 +46,37 @@ una versión anterior a 6.1. La instalación no fuerza dependencias incompatible
 - Vite verificado en `127.0.0.1:5173`.
 - `/health` atravesó el proxy y devolvió el contrato exacto de FastAPI.
 
-## 3.2 Siguiente entrega — Análisis de URL
+## 3.2 Análisis de URL
 
-La siguiente tarea implementará el formulario de URL, errores accesibles, estado
-de análisis y tarjeta de metadatos con opciones de vídeo y audio disponibles.
+Estado: completado.
+
+- [x] Implementar el formulario de URL y su estado de análisis.
+- [x] Consumir el contrato estable de `POST /api/media/inspect`.
+- [x] Mostrar errores comprensibles y accesibles.
+- [x] Presentar miniatura, plataforma, título, autor y duración disponibles.
+- [x] Mostrar únicamente las calidades de vídeo informadas por el backend.
+- [x] Permitir escoger vídeo o audio.
+
+## 3.3 Creación de descargas desde la interfaz
+
+Estado: implementado; pendiente de prueba manual real tras conectar el entorno.
+
+- [x] Consumir el contrato estable de `POST /api/downloads`.
+- [x] Construir selecciones válidas para MP4 y MP3.
+- [x] Ofrecer 128, 192 y 320 kbps, con 192 kbps como valor inicial.
+- [x] Impedir solicitudes duplicadas mientras se crea la tarea.
+- [x] Mostrar el estado inicial, formato y posición en cola.
+- [x] Actualizar la tarjeta con eventos SSE del backend.
+- [x] Mostrar progreso, fallo y archivo final cuando estén disponibles.
+- [x] Traducir errores del backend a mensajes visibles.
+- [x] Mostrar y persistir localmente la versión aceptada del aviso de uso.
+- [x] Mantener el aviso disponible en **Acerca de**.
+- [x] Cubrir el flujo con pruebas de interfaz y del cliente HTTP.
+- [x] Arrancar `./scripts/dev.sh` con ejecutor real por defecto.
+- [ ] Verificar una descarga real iniciada íntegramente desde la interfaz.
+
+## 3.4 Siguiente entrega — Controles de descarga
+
+La siguiente tarea añadirá acciones sobre descargas desde la interfaz,
+empezando por cancelar una tarea activa o en cola y reflejar el resultado en la
+misma tarjeta.

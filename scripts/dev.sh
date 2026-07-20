@@ -7,6 +7,7 @@ project_directory="$(dirname -- "$script_directory")"
 backend_directory="$project_directory/backend"
 frontend_directory="$project_directory/frontend"
 uv_cache_directory="${UV_CACHE_DIR:-/private/tmp/video-downloader-uv-cache}"
+download_executor="${VD_DOWNLOAD_EXECUTOR:-real}"
 restart_requested=false
 
 backend_pid=""
@@ -51,6 +52,32 @@ stop_port_owner() {
   fi
 }
 
+force_stop_port_owner() {
+  local port="$1"
+  local pid
+  pid="$(process_using_port "$port")"
+
+  if [[ -n "$pid" ]]; then
+    echo "Force stopping process $pid using port $port"
+    kill -KILL "$pid"
+  fi
+}
+
+wait_for_port_release() {
+  local port="$1"
+  local attempts=16
+
+  while [[ "$attempts" -gt 0 ]]; do
+    if [[ -z "$(process_using_port "$port")" ]]; then
+      return 0
+    fi
+    sleep 0.5
+    attempts=$((attempts - 1))
+  done
+
+  return 1
+}
+
 ensure_port_available() {
   local port="$1"
   local label="$2"
@@ -61,8 +88,11 @@ ensure_port_available() {
 
   if [[ "$restart_requested" == true ]]; then
     stop_port_owner "$port"
-    sleep 1
-    if [[ -z "$(process_using_port "$port")" ]]; then
+    if wait_for_port_release "$port"; then
+      return
+    fi
+    force_stop_port_owner "$port"
+    if wait_for_port_release "$port"; then
       return
     fi
   fi
@@ -80,7 +110,7 @@ ensure_port_available 5173 "Frontend"
 echo "Starting backend on http://127.0.0.1:8000"
 (
   cd "$backend_directory"
-  UV_CACHE_DIR="$uv_cache_directory" uv run --offline uvicorn app.main:app \
+  UV_CACHE_DIR="$uv_cache_directory" VD_DOWNLOAD_EXECUTOR="$download_executor" uv run --offline uvicorn app.main:app \
     --host 127.0.0.1 \
     --port 8000
 ) &
@@ -97,6 +127,7 @@ echo
 echo "Video Downloader is starting:"
 echo "  Backend:  http://127.0.0.1:8000"
 echo "  Frontend: http://127.0.0.1:5173"
+echo "  Executor: $download_executor"
 echo
 echo "Press Ctrl+C to stop both servers."
 
