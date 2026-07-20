@@ -179,6 +179,12 @@ class MediaInspectionService:
 
     async def inspect(self, raw_url: str) -> MediaInspectionResponse:
         validated = await self._validator.validate(raw_url)
+        return await self.inspect_validated(validated)
+
+    async def inspect_validated(
+        self, validated: ValidatedMediaUrl
+    ) -> MediaInspectionResponse:
+        """Inspect a URL that already passed the canonical security validation."""
         if not self._node_binary:
             raise MediaInspectionError("inspection_unavailable", status_code=503)
 

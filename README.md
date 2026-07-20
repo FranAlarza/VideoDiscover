@@ -10,6 +10,9 @@ La fase 1 está completada: el backend valida y analiza URLs autorizadas de
 YouTube y TikTok sin descargar contenido. Consulta
 [`docs/phase-1.md`](docs/phase-1.md) para ver contratos y evidencias.
 
+La fase 2 está en curso. Ya existe el modelo de tarea, su máquina de estados y la
+API provisional en memoria; consulta [`docs/phase-2.md`](docs/phase-2.md).
+
 ## Estructura
 
 - `backend/`: API, motor de descarga y persistencia.
