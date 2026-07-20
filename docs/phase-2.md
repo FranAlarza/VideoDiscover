@@ -219,3 +219,28 @@ actualización programáticamente.
 - Tras detener y volver a iniciar Uvicorn con la misma base, `GET /api/downloads/{id}`
   devolvió el mismo UUID, selección, fechas, progreso, resultado e intento.
 - El estado terminal permaneció en `completed` y no se creó otro intento.
+
+## 2.5 Reintentos manuales e historial de intentos
+
+Estado de implementación: completado.
+
+- [x] Añadir `POST /api/downloads/{id}/retry`.
+- [x] Permitir únicamente estados `failed` e `interrupted`.
+- [x] Validar e inspeccionar de nuevo la URL canónica antes del reintento.
+- [x] Rechazar el reintento si el formato seleccionado ya no está disponible.
+- [x] Actualizar título y URL canónica internos con el nuevo análisis.
+- [x] Crear un intento nuevo sin modificar el anterior.
+- [x] Conservar y devolver todos los intentos en orden.
+- [x] Mantener `current_attempt` para consultas directas del estado actual.
+- [x] Impedir dos reintentos simultáneos de la misma ejecución.
+- [x] Despertar la cola después de crear el nuevo intento.
+- [x] No exponer URL original, URL canónica ni rutas internas en el historial.
+
+### Evidencia automatizada
+
+- Reintento de fallo con reanálisis y segundo intento `queued`.
+- Rechazo estable desde estados no reintentables.
+- Desaparición de formato sin creación de intento adicional.
+- Dos solicitudes concurrentes crean exactamente un intento.
+- Historial completo conservado tras reconstruir desde SQLite.
+- Endpoint verificado con historial `interrupted` → `queued`.

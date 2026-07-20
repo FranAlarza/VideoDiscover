@@ -6,6 +6,7 @@ from sqlalchemy import inspect
 from app.database.migrations import upgrade_database
 from app.database.repository import SqliteDownloadRepository, create_sqlite_engine
 from app.downloader.domain import (
+    DownloadFailure,
     DownloadProgress,
     DownloadResult,
     DownloadSelection,
@@ -152,5 +153,33 @@ def test_two_repository_instances_cannot_claim_same_task(tmp_path: Path) -> None
 
         assert sum(claim is not None for claim in claims) == 1
         assert next(claim for claim in claims if claim is not None).id == task.id
+
+    asyncio.run(scenario())
+
+
+def test_sqlite_repository_preserves_all_retry_attempts(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        repository = _repository(tmp_path)
+        task = _task("retry")
+        task.current_attempt.transition_to(DownloadStatus.DOWNLOADING)
+        task.current_attempt.transition_to(
+            DownloadStatus.FAILED,
+            failure=DownloadFailure("network_error", "Connection failed"),
+        )
+        task.start_new_attempt()
+        await repository.create(task)
+
+        restarted = SqliteDownloadRepository(
+            create_sqlite_engine(tmp_path / "downloads.sqlite3")
+        )
+        stored = await restarted.get(task.id)
+
+        assert stored is not None
+        assert [attempt.number for attempt in stored.attempts] == [1, 2]
+        assert [attempt.status for attempt in stored.attempts] == [
+            DownloadStatus.FAILED,
+            DownloadStatus.QUEUED,
+        ]
+        assert stored.attempts[0].failure.code == "network_error"
 
     asyncio.run(scenario())

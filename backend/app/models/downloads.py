@@ -95,6 +95,7 @@ class DownloadTaskResponse(BaseModel):
     queue_position: int | None = Field(default=None, ge=1)
     created_at: datetime
     current_attempt: DownloadAttemptResponse
+    attempts: list[DownloadAttemptResponse]
 
 
 class DownloadListResponse(BaseModel):

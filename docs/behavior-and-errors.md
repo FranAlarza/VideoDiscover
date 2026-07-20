@@ -117,6 +117,7 @@ La disponibilidad se comprueba inmediatamente antes de reservar la salida. Tempo
 | `format_unavailable` | Cambió la oferta de formatos | La calidad seleccionada ya no está disponible. | Analizar otra vez |
 | `download_not_found` | La tarea no existe | No se ha encontrado la descarga solicitada. | Actualizar historial |
 | `cancellation_not_allowed` | Estado no cancelable desde la cola | Esta descarga ya no puede cancelarse desde la cola. | Actualizar estado |
+| `retry_not_allowed` | Estado no reintentable | Solo se pueden reintentar descargas fallidas o interrumpidas. | Actualizar estado |
 | `invalid_status_transition` | Transición interna no permitida | El estado de la descarga no se puede modificar así. | Consultar registro |
 | `disk_full` | Espacio insuficiente | No hay suficiente espacio en el disco. | Liberar espacio |
 | `output_not_writable` | Sin permisos de escritura | No se puede escribir en la carpeta seleccionada. | Cambiar carpeta |

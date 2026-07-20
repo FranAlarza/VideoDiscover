@@ -57,6 +57,20 @@ async def cancel_download(
         return _error_response(error)
 
 
+@router.post("/{task_id}/retry", response_model=DownloadTaskResponse)
+async def retry_download(
+    task_id: UUID, request: Request
+) -> DownloadTaskResponse | JSONResponse:
+    try:
+        return await request.app.state.download_task_service.retry(task_id)
+    except (
+        UrlValidationError,
+        MediaInspectionError,
+        DownloadApplicationError,
+    ) as error:
+        return _error_response(error)
+
+
 def _error_response(
     error: UrlValidationError | MediaInspectionError | DownloadApplicationError,
 ) -> JSONResponse:
