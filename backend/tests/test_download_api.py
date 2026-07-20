@@ -1,11 +1,11 @@
 import asyncio
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.downloader.domain import (
+    DownloadResult,
     DownloadSelection,
     DownloadStatus,
     DownloadTask,
@@ -13,7 +13,7 @@ from app.downloader.domain import (
     VideoQuality,
 )
 from app.downloader.repository import InMemoryDownloadRepository
-from app.downloader.service import DownloadTaskService
+from app.downloader.service import DownloadApplicationError, DownloadTaskService
 from app.main import create_app
 from app.models.inspection import MediaInspectionResponse
 from app.models.media import Platform, ValidatedMediaUrl
@@ -184,9 +184,8 @@ def test_download_api_retries_interrupted_task_and_exposes_attempt_history() -> 
 
 def test_download_api_opens_and_reveals_a_completed_file() -> None:
     task_service = AsyncMock()
-    task_service.get.return_value = SimpleNamespace(
-        status=DownloadStatus.COMPLETED,
-        current_attempt=SimpleNamespace(result=SimpleNamespace(filename="Example.mp4")),
+    task_service.get_file_result.return_value = DownloadResult(
+        "Example.mp4", "mp4", 100, 720, "/tmp/downloads"
     )
     file_actions = Mock()
 
@@ -208,15 +207,16 @@ def test_download_api_opens_and_reveals_a_completed_file() -> None:
     assert open_response.json() == {"action": "opened"}
     assert reveal_response.status_code == 200
     assert reveal_response.json() == {"action": "revealed"}
-    file_actions.open.assert_called_once_with("Example.mp4")
-    file_actions.reveal.assert_called_once_with("Example.mp4")
+    file_actions.open.assert_called_once_with("Example.mp4", "/tmp/downloads")
+    file_actions.reveal.assert_called_once_with("Example.mp4", "/tmp/downloads")
 
 
 def test_download_api_rejects_file_actions_before_completion() -> None:
     task_service = AsyncMock()
-    task_service.get.return_value = SimpleNamespace(
-        status=DownloadStatus.DOWNLOADING,
-        current_attempt=SimpleNamespace(result=None),
+    task_service.get_file_result.side_effect = DownloadApplicationError(
+        "download_file_not_ready",
+        "La descarga todavía no tiene un archivo final disponible.",
+        status_code=409,
     )
 
     with TestClient(

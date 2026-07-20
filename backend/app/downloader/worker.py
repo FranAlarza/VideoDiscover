@@ -47,6 +47,13 @@ class DownloadWorker:
         self._active_cancel.set()
         return True
 
+    def update_output_root(self, output_root) -> None:
+        if self._active_id is not None:
+            raise RuntimeError("cannot change output root while a download is active")
+        update = getattr(self._executor, "update_output_root", None)
+        if update is not None:
+            update(output_root)
+
     async def shutdown(self) -> None:
         if self._runner is None:
             return

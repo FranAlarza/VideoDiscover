@@ -13,9 +13,11 @@ from app.api.downloads import router as downloads_router
 from app.api.events import router as events_router
 from app.api.health import router as health_router
 from app.api.media import router as media_router
+from app.api.settings import router as settings_router
 from app.config import Settings
 from app.database.migrations import upgrade_database
 from app.database.repository import SqliteDownloadRepository, create_sqlite_engine
+from app.database.settings_repository import SqliteSettingsRepository
 from app.downloader.executor import SimulatedDownloadExecutor
 from app.downloader.paths import DownloadPathPolicy
 from app.downloader.repository import InMemoryDownloadRepository
@@ -26,7 +28,9 @@ from app.events.broker import DownloadEventBroker
 from app.media.inspection import MediaInspectionService
 from app.media.validation import MediaUrlValidationService
 from app.system.diagnostics import DependencyDiagnosticsService
+from app.system.download_directory import DownloadDirectoryValidator
 from app.system.file_actions import DownloadFileActionService
+from app.system.settings_service import LocalSettingsService
 
 
 def create_app(
@@ -37,6 +41,7 @@ def create_app(
     download_task_service: DownloadTaskService | None = None,
     download_worker: DownloadWorker | None = None,
     download_file_action_service: DownloadFileActionService | None = None,
+    local_settings_service: LocalSettingsService | None = None,
 ) -> FastAPI:
     """Create an isolated API application instance."""
     runtime_settings = settings or Settings.from_environment()
@@ -47,6 +52,8 @@ def create_app(
     )
     runtime_worker = download_worker
     runtime_event_broker = DownloadEventBroker()
+    runtime_local_settings = local_settings_service
+    sqlite_repository = None
     runtime_file_actions = download_file_action_service or DownloadFileActionService(
         runtime_settings.download_output_root
     )
@@ -55,9 +62,10 @@ def create_app(
             repository = InMemoryDownloadRepository()
         else:
             upgrade_database(runtime_settings.database_path)
-            repository = SqliteDownloadRepository(
-                create_sqlite_engine(runtime_settings.database_path)
-            )
+            engine = create_sqlite_engine(runtime_settings.database_path)
+            sqlite_repository = SqliteDownloadRepository(engine)
+            repository = sqlite_repository
+            settings_repository = SqliteSettingsRepository(engine)
         if runtime_worker is None:
             executor = SimulatedDownloadExecutor()
             if runtime_settings.download_executor == "real":
@@ -72,6 +80,16 @@ def create_app(
                     node_binary=node_binary,
                 )
             runtime_worker = DownloadWorker(repository, executor, runtime_event_broker)
+        if runtime_settings.environment != "test" and runtime_local_settings is None:
+            runtime_local_settings = LocalSettingsService(
+                settings_repository,
+                repository,
+                DownloadDirectoryValidator(
+                    temporary_root=runtime_settings.download_temporary_root
+                ),
+                default_output_root=runtime_settings.download_output_root,
+                worker=runtime_worker,
+            )
         runtime_download_tasks = DownloadTaskService(
             repository,
             runtime_media_url_validator,
@@ -93,6 +111,16 @@ def create_app(
         application.state.download_worker = runtime_worker
         application.state.download_event_broker = runtime_event_broker
         application.state.download_file_action_service = runtime_file_actions
+        application.state.local_settings_service = runtime_local_settings
+        if runtime_local_settings is not None:
+            local_settings = await runtime_local_settings.get()
+            validated_root = DownloadDirectoryValidator(
+                temporary_root=runtime_settings.download_temporary_root
+            ).validate(local_settings.download_output_root)
+            if runtime_worker is not None:
+                runtime_worker.update_output_root(validated_root)
+            if sqlite_repository is not None:
+                await sqlite_repository.backfill_result_output_directory(validated_root)
         if runtime_worker is not None:
             await runtime_worker.start()
         try:
@@ -114,7 +142,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=[runtime_settings.frontend_origin],
         allow_credentials=False,
-        allow_methods=["GET", "POST", "DELETE"],
+        allow_methods=["GET", "POST", "PUT", "DELETE"],
         allow_headers=["Content-Type"],
     )
     application.include_router(health_router)
@@ -122,6 +150,7 @@ def create_app(
     application.include_router(media_router)
     application.include_router(downloads_router)
     application.include_router(events_router)
+    application.include_router(settings_router)
     return application
 
 

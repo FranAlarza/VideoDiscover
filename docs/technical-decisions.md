@@ -54,6 +54,11 @@ SQLite guardará configuración, aceptación del aviso, cola, historial e intent
 - `settings`: preferencias locales.
 - `legal_acceptances`: versión y fecha de aceptación del aviso.
 
+La tabla `settings` se crea en la revisión `20260720_02`. La primera preferencia
+tipada es `download_output_root`; el repositorio conserva rutas absolutas resueltas,
+pero su validación operativa y su aplicación al ejecutor pertenecen a la siguiente
+entrega.
+
 El progreso de alta frecuencia permanece en memoria. Solo se persisten transiciones de estado y puntos necesarios para recuperación; no se escribe en SQLite por cada actualización de porcentaje.
 
 Las modificaciones del esquema se realizan mediante migraciones Alembic. No se altera la base de datos manualmente durante una actualización normal.
@@ -80,7 +85,13 @@ POST /api/downloads/{id}/retry
 POST /api/downloads/{id}/open
 POST /api/downloads/{id}/reveal
 GET  /api/events
+GET  /api/settings
+PUT  /api/settings/download-directory
 ```
+
+La ubicación absoluta del resultado se conserva únicamente en SQLite para que
+las acciones locales sigan funcionando aunque cambie la carpeta configurada.
+Esa ruta no forma parte de las respuestas HTTP ni de los eventos SSE.
 
 La forma definitiva de estos contratos se establecerá antes de implementarlos.
 

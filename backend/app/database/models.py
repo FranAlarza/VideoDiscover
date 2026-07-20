@@ -59,9 +59,20 @@ class DownloadAttemptRecord(Base):
     result_extension: Mapped[str | None] = mapped_column(String(20))
     result_size_bytes: Mapped[int | None] = mapped_column(Integer)
     result_effective_quality: Mapped[int | None] = mapped_column(Integer)
+    result_output_directory: Mapped[str | None] = mapped_column(String(4096))
     download: Mapped[DownloadRecord] = relationship(back_populates="attempts")
 
     __table_args__ = (
         Index("ix_attempts_status_created", "status", "created_at"),
         Index("uq_attempt_download_number", "download_id", "number", unique=True),
+    )
+
+
+class SettingRecord(Base):
+    __tablename__ = "settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(String(4096), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
     )

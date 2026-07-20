@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
-from sqlalchemy import create_engine, event, select
+from sqlalchemy import create_engine, event, select, update
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, selectinload
 
@@ -115,6 +115,22 @@ class SqliteDownloadRepository:
             if not deleted:
                 raise KeyError(task_id)
             self._live_progress.pop(task_id, None)
+
+    async def backfill_result_output_directory(self, output_root: Path) -> None:
+        resolved = str(output_root.expanduser().resolve())
+        async with self._lock:
+            await asyncio.to_thread(
+                self._backfill_result_output_directory_sync, resolved
+            )
+
+    def _backfill_result_output_directory_sync(self, output_root: str) -> None:
+        with Session(self._engine) as session, session.begin():
+            session.execute(
+                update(DownloadAttemptRecord)
+                .where(DownloadAttemptRecord.result_filename.is_not(None))
+                .where(DownloadAttemptRecord.result_output_directory.is_(None))
+                .values(result_output_directory=output_root)
+            )
 
     def _delete_sync(self, task_id: UUID) -> bool:
         with Session(self._engine) as session, session.begin():
@@ -227,6 +243,9 @@ def _update_attempt(record: DownloadAttemptRecord, attempt: DownloadAttempt) -> 
     record.result_effective_quality = (
         attempt.result.effective_quality if attempt.result else None
     )
+    record.result_output_directory = (
+        attempt.result.output_directory if attempt.result else None
+    )
 
 
 def _to_domain(record: DownloadRecord) -> DownloadTask:
@@ -279,6 +298,7 @@ def _attempt_to_domain(record: DownloadAttemptRecord) -> DownloadAttempt:
                 extension=record.result_extension,
                 size_bytes=record.result_size_bytes,
                 effective_quality=record.result_effective_quality,
+                output_directory=record.result_output_directory,
             )
             if record.result_filename
             and record.result_extension

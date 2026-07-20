@@ -40,7 +40,7 @@ def test_migration_creates_current_schema_on_empty_database(tmp_path: Path) -> N
     upgrade_database(database_path)
 
     tables = set(inspect(create_sqlite_engine(database_path)).get_table_names())
-    assert {"alembic_version", "downloads", "download_attempts"} <= tables
+    assert {"alembic_version", "downloads", "download_attempts", "settings"} <= tables
 
 
 def test_sqlite_repository_round_trips_completed_task(tmp_path: Path) -> None:
@@ -55,7 +55,9 @@ def test_sqlite_repository_round_trips_completed_task(tmp_path: Path) -> None:
         )
         claimed.current_attempt.transition_to(
             DownloadStatus.COMPLETED,
-            result=DownloadResult("Example.mp4", "mp4", 10, 720),
+            result=DownloadResult(
+                "Example.mp4", "mp4", 10, 720, str(tmp_path / "downloads")
+            ),
         )
         await repository.save(claimed)
 
@@ -64,8 +66,36 @@ def test_sqlite_repository_round_trips_completed_task(tmp_path: Path) -> None:
         assert reloaded is not None
         assert reloaded.status is DownloadStatus.COMPLETED
         assert reloaded.current_attempt.result.filename == "Example.mp4"
+        assert reloaded.current_attempt.result.output_directory == str(
+            tmp_path / "downloads"
+        )
         assert reloaded.current_attempt.progress.percentage == 100
         assert reloaded.created_at.tzinfo is not None
+
+    asyncio.run(scenario())
+
+
+def test_sqlite_repository_backfills_legacy_result_location(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        repository = _repository(tmp_path)
+        task = _task("legacy")
+        await repository.create(task)
+        claimed = await repository.claim_next_queued()
+        assert claimed is not None
+        claimed.current_attempt.transition_to(
+            DownloadStatus.COMPLETED,
+            result=DownloadResult("Legacy.mp4", "mp4", 10, 720),
+        )
+        await repository.save(claimed)
+
+        legacy_root = tmp_path / "legacy-downloads"
+        await repository.backfill_result_output_directory(legacy_root)
+        reloaded = await repository.get(task.id)
+
+        assert reloaded is not None
+        assert reloaded.current_attempt.result.output_directory == str(
+            legacy_root.resolve()
+        )
 
     asyncio.run(scenario())
 

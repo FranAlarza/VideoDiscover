@@ -124,6 +124,10 @@ La disponibilidad se comprueba inmediatamente antes de reservar la salida. Tempo
 | `unsafe_output_path` | La ruta final sale de la carpeta autorizada | La ruta del archivo descargado no es segura. | Consultar registro |
 | `file_action_unsupported` | Sistema operativo no compatible | Esta acción todavía solo está disponible en macOS. | Abrir la carpeta manualmente |
 | `file_action_failed` | macOS no pudo ejecutar la acción | No se ha podido abrir el archivo con macOS. | Reintentar o abrirlo manualmente |
+| `invalid_download_directory` | Ruta vacía, relativa o inválida | La carpeta de descargas seleccionada no es válida. | Elegir otra carpeta |
+| `unsafe_download_directory` | Raíz o árbol temporal interno | La carpeta seleccionada no es un destino de descarga seguro. | Elegir una carpeta personal |
+| `download_directory_not_writable` | No es carpeta o no permite escritura | No se puede escribir en la carpeta seleccionada. | Revisar permisos o elegir otra |
+| `download_directory_change_blocked` | Hay tareas activas o pendientes | Espera a que terminen o cancela las descargas pendientes antes de cambiar la carpeta. | Vaciar la cola |
 | `invalid_status_transition` | Transición interna no permitida | El estado de la descarga no se puede modificar así. | Consultar registro |
 | `disk_full` | Espacio insuficiente | No hay suficiente espacio en el disco. | Liberar espacio |
 | `output_not_writable` | Sin permisos de escritura | No se puede escribir en la carpeta seleccionada. | Cambiar carpeta |

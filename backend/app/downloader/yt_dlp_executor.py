@@ -118,6 +118,12 @@ class YtDlpDownloadExecutor:
         self._node_binary = node_binary
         self._timeout_seconds = timeout_seconds
 
+    def update_output_root(self, output_root: Path) -> None:
+        self._path_policy = DownloadPathPolicy(
+            output_root=output_root,
+            temporary_root=self._path_policy.temporary_root,
+        )
+
     async def execute(
         self,
         task: DownloadTask,
@@ -324,6 +330,7 @@ def _map_download_result(
                 else None
             )
         ),
+        output_directory=str(path.parent.resolve()),
     )
 
 

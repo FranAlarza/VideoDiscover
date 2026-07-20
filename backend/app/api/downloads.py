@@ -5,7 +5,6 @@ from uuid import UUID
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from app.downloader.domain import DownloadStatus
 from app.downloader.service import DownloadApplicationError
 from app.media.inspection import MediaInspectionError
 from app.media.validation import UrlValidationError
@@ -104,19 +103,12 @@ async def _perform_file_action(
     task_id: UUID, request: Request, *, reveal: bool
 ) -> DownloadFileActionResponse | JSONResponse:
     try:
-        task = await request.app.state.download_task_service.get(task_id)
-        result = task.current_attempt.result
-        if task.status is not DownloadStatus.COMPLETED or result is None:
-            raise DownloadFileActionError(
-                "download_file_not_ready",
-                "La descarga todavía no tiene un archivo final disponible.",
-                status_code=409,
-            )
+        result = await request.app.state.download_task_service.get_file_result(task_id)
         service = request.app.state.download_file_action_service
         if reveal:
-            service.reveal(result.filename)
+            service.reveal(result.filename, result.output_directory)
             return DownloadFileActionResponse(action="revealed")
-        service.open(result.filename)
+        service.open(result.filename, result.output_directory)
         return DownloadFileActionResponse(action="opened")
     except (DownloadApplicationError, DownloadFileActionError) as error:
         return _error_response(error)

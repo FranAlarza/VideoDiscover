@@ -28,15 +28,17 @@ class DownloadFileActionService:
         self._launcher = launcher or _launch_detached
         self._platform = platform or sys.platform
 
-    def open(self, filename: str) -> None:
-        path = self._resolve_file(filename)
+    def open(self, filename: str, output_root: str | Path | None = None) -> None:
+        path = self._resolve_file(filename, output_root)
         self._launch(["/usr/bin/open", "--", str(path)])
 
-    def reveal(self, filename: str) -> None:
-        path = self._resolve_file(filename)
+    def reveal(self, filename: str, output_root: str | Path | None = None) -> None:
+        path = self._resolve_file(filename, output_root)
         self._launch(["/usr/bin/open", "-R", "--", str(path)])
 
-    def _resolve_file(self, filename: str) -> Path:
+    def _resolve_file(
+        self, filename: str, output_root: str | Path | None = None
+    ) -> Path:
         if not filename or Path(filename).name != filename:
             raise DownloadFileActionError(
                 "unsafe_output_path",
@@ -44,8 +46,15 @@ class DownloadFileActionService:
                 status_code=409,
             )
         try:
-            path = (self._output_root / filename).resolve(strict=True)
-            path.relative_to(self._output_root)
+            root = (
+                Path(output_root).expanduser().resolve(strict=True)
+                if output_root is not None
+                else self._output_root
+            )
+            if root == Path(root.anchor) or not root.is_dir():
+                raise ValueError("unsafe output root")
+            path = (root / filename).resolve(strict=True)
+            path.relative_to(root)
         except FileNotFoundError as error:
             raise DownloadFileActionError(
                 "download_file_missing",

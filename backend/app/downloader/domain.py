@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import IntEnum, StrEnum
+from pathlib import Path
 from uuid import UUID, uuid4
 
 from app.models.media import Platform
@@ -101,12 +102,19 @@ class DownloadResult:
     extension: str
     size_bytes: int
     effective_quality: int | None = None
+    output_directory: str | None = None
 
     def __post_init__(self) -> None:
         if not self.filename or "/" in self.filename or "\\" in self.filename:
             raise DownloadDomainError("invalid_result", "El nombre final no es válido.")
         if self.size_bytes < 0:
             raise DownloadDomainError("invalid_result", "El tamaño final no es válido.")
+        if self.output_directory is not None:
+            directory = Path(self.output_directory)
+            if not directory.is_absolute() or "\x00" in self.output_directory:
+                raise DownloadDomainError(
+                    "invalid_result", "La carpeta final no es válida."
+                )
 
 
 _ALLOWED_TRANSITIONS: dict[DownloadStatus, set[DownloadStatus]] = {

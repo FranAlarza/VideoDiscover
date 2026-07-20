@@ -24,6 +24,23 @@ def test_file_actions_open_and_reveal_a_contained_file(tmp_path: Path) -> None:
     ]
 
 
+def test_file_actions_use_the_result_original_directory(tmp_path: Path) -> None:
+    current_root = tmp_path / "current"
+    historical_root = tmp_path / "historical"
+    current_root.mkdir()
+    historical_root.mkdir()
+    output_file = historical_root / "Example.mp4"
+    output_file.write_bytes(b"video")
+    calls: list[list[str]] = []
+    service = DownloadFileActionService(
+        current_root, launcher=calls.append, platform="darwin"
+    )
+
+    service.open(output_file.name, str(historical_root))
+
+    assert calls == [["/usr/bin/open", "--", str(output_file)]]
+
+
 def test_file_actions_reject_a_missing_file(tmp_path: Path) -> None:
     service = DownloadFileActionService(
         tmp_path, launcher=lambda _: None, platform="darwin"

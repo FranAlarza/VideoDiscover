@@ -133,6 +133,7 @@ def test_executor_uses_isolated_workspace_and_maps_verified_result(
         assert result.filename == "Example.mp4"
         assert result.size_bytes == len(b"safe media")
         assert result.effective_quality == 720
+        assert result.output_directory == str((tmp_path / "downloads").resolve())
         assert progress[0].percentage == 50
         assert processing == [True]
         assert (tmp_path / "downloads" / "Example.mp4").is_file()
@@ -140,6 +141,35 @@ def test_executor_uses_isolated_workspace_and_maps_verified_result(
         _, options, _ = runner.calls[0]
         output_parent = Path(options["outtmpl"]).parent.resolve()
         assert output_parent.is_relative_to(temporary_root.resolve())
+
+    asyncio.run(scenario())
+
+
+def test_executor_adopts_a_new_output_root_for_future_downloads(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        temporary_root = tmp_path / "temporary"
+        new_root = tmp_path / "new-downloads"
+        executor = YtDlpDownloadExecutor(
+            DownloadPathPolicy(
+                output_root=tmp_path / "old-downloads",
+                temporary_root=temporary_root,
+            ),
+            runner=FakeRunner(temporary_root),
+            node_binary="/tools/node",
+        )
+
+        executor.update_output_root(new_root)
+        result = await executor.execute(
+            _task(),
+            on_progress=lambda value: _append_async([], value),
+            on_processing=lambda: _append_async([], True),
+            cancel_event=asyncio.Event(),
+        )
+
+        assert (new_root / result.filename).is_file()
+        assert result.output_directory == str(new_root.resolve())
 
     asyncio.run(scenario())
 

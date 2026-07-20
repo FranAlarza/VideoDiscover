@@ -5,6 +5,7 @@ from uuid import UUID
 
 from app.downloader.domain import (
     DownloadAttempt,
+    DownloadResult,
     DownloadSelection,
     DownloadStatus,
     DownloadTask,
@@ -167,6 +168,19 @@ class DownloadTaskService:
             )
         await self._repository.delete(task_id)
         await self._publish(task, name="download.deleted", force=True)
+
+    async def get_file_result(self, task_id: UUID) -> DownloadResult:
+        task = await self._repository.get(task_id)
+        if task is None:
+            raise _not_found()
+        result = task.current_attempt.result
+        if task.status is not DownloadStatus.COMPLETED or result is None:
+            raise DownloadApplicationError(
+                "download_file_not_ready",
+                "La descarga todavía no tiene un archivo final disponible.",
+                status_code=409,
+            )
+        return result
 
     async def _publish(
         self,

@@ -89,6 +89,11 @@ def test_valid_download_state_path() -> None:
     assert attempt.result is not None
 
 
+def test_download_result_rejects_a_relative_output_directory() -> None:
+    with pytest.raises(DownloadDomainError):
+        DownloadResult("Example.mp4", "mp4", 1000, 720, "relative/downloads")
+
+
 @pytest.mark.parametrize(
     ("initial", "target"),
     [
