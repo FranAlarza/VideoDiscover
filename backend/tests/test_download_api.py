@@ -1,5 +1,6 @@
 import asyncio
-from unittest.mock import AsyncMock
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 
 from fastapi.testclient import TestClient
 
@@ -52,6 +53,8 @@ def test_download_api_create_list_get_and_cancel() -> None:
         list_response = client.get("/api/downloads")
         get_response = client.get(f"/api/downloads/{task_id}")
         cancel_response = client.post(f"/api/downloads/{task_id}/cancel")
+        delete_response = client.delete(f"/api/downloads/{task_id}")
+        list_after_delete = client.get("/api/downloads")
 
     assert created_response.status_code == 201
     assert created_response.json()["status"] == "queued"
@@ -63,6 +66,9 @@ def test_download_api_create_list_get_and_cancel() -> None:
     assert get_response.status_code == 200
     assert cancel_response.status_code == 200
     assert cancel_response.json()["status"] == "cancelled"
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"deleted": True}
+    assert list_after_delete.json()["items"] == []
 
 
 def test_download_api_rejects_contradictory_options() -> None:
@@ -115,6 +121,24 @@ def test_download_api_rejects_retry_for_non_retryable_task() -> None:
     assert response.json()["error"]["code"] == "retry_not_allowed"
 
 
+def test_download_api_rejects_delete_for_active_or_queued_task() -> None:
+    with TestClient(
+        create_app(Settings(environment="test"), download_task_service=_service())
+    ) as client:
+        created = client.post(
+            "/api/downloads",
+            json={
+                "url": "https://youtu.be/dQw4w9WgXcQ",
+                "output_type": "video",
+                "video_quality": 720,
+            },
+        ).json()
+        response = client.delete(f"/api/downloads/{created['id']}")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "deletion_not_allowed"
+
+
 def test_download_api_retries_interrupted_task_and_exposes_attempt_history() -> None:
     repository = InMemoryDownloadRepository()
     task = DownloadTask.create(
@@ -156,3 +180,55 @@ def test_download_api_retries_interrupted_task_and_exposes_attempt_history() -> 
         "queued",
     ]
     assert "url" not in response.json()
+
+
+def test_download_api_opens_and_reveals_a_completed_file() -> None:
+    task_service = AsyncMock()
+    task_service.get.return_value = SimpleNamespace(
+        status=DownloadStatus.COMPLETED,
+        current_attempt=SimpleNamespace(result=SimpleNamespace(filename="Example.mp4")),
+    )
+    file_actions = Mock()
+
+    with TestClient(
+        create_app(
+            Settings(environment="test"),
+            download_task_service=task_service,
+            download_file_action_service=file_actions,
+        )
+    ) as client:
+        open_response = client.post(
+            "/api/downloads/00000000-0000-4000-8000-000000000001/open"
+        )
+        reveal_response = client.post(
+            "/api/downloads/00000000-0000-4000-8000-000000000001/reveal"
+        )
+
+    assert open_response.status_code == 200
+    assert open_response.json() == {"action": "opened"}
+    assert reveal_response.status_code == 200
+    assert reveal_response.json() == {"action": "revealed"}
+    file_actions.open.assert_called_once_with("Example.mp4")
+    file_actions.reveal.assert_called_once_with("Example.mp4")
+
+
+def test_download_api_rejects_file_actions_before_completion() -> None:
+    task_service = AsyncMock()
+    task_service.get.return_value = SimpleNamespace(
+        status=DownloadStatus.DOWNLOADING,
+        current_attempt=SimpleNamespace(result=None),
+    )
+
+    with TestClient(
+        create_app(
+            Settings(environment="test"),
+            download_task_service=task_service,
+            download_file_action_service=Mock(),
+        )
+    ) as client:
+        response = client.post(
+            "/api/downloads/00000000-0000-4000-8000-000000000001/open"
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "download_file_not_ready"

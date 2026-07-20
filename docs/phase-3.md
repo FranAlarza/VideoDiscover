@@ -59,7 +59,7 @@ Estado: completado.
 
 ## 3.3 Creación de descargas desde la interfaz
 
-Estado: implementado; pendiente de prueba manual real tras conectar el entorno.
+Estado: implementado y verificado manualmente con descargas reales.
 
 - [x] Consumir el contrato estable de `POST /api/downloads`.
 - [x] Construir selecciones válidas para MP4 y MP3.
@@ -73,7 +73,7 @@ Estado: implementado; pendiente de prueba manual real tras conectar el entorno.
 - [x] Mantener el aviso disponible en **Acerca de**.
 - [x] Cubrir el flujo con pruebas de interfaz y del cliente HTTP.
 - [x] Arrancar `./scripts/dev.sh` con ejecutor real por defecto.
-- [ ] Verificar una descarga real iniciada íntegramente desde la interfaz.
+- [x] Verificar una descarga real iniciada íntegramente desde la interfaz.
 
 ## 3.4 Controles de descarga
 
@@ -112,3 +112,28 @@ Estado: implementado y verificado manualmente.
 - [x] Conservar la cancelación cuando la tarea vuelve a estar activa o en cola.
 - [x] Cubrir el cliente HTTP y la interacción con pruebas automatizadas.
 - [x] Verificar manualmente un reintento real hasta completarse.
+
+## 3.7 Acciones sobre archivos completados
+
+Estado: implementado y verificado manualmente en macOS.
+
+- [x] Resolver el archivo final exclusivamente dentro de la carpeta autorizada.
+- [x] Rechazar rutas manipuladas, archivos ausentes y enlaces que escapen del destino.
+- [x] Exponer acciones para abrir el archivo y mostrarlo en Finder.
+- [x] Ejecutar `/usr/bin/open` con argumentos separados y sin construir comandos de shell.
+- [x] Mostrar acciones únicamente en descargas completadas con resultado.
+- [x] Mantener carga y errores independientes por tarjeta.
+- [x] Cubrir servicio, API, cliente HTTP e interfaz con pruebas automatizadas.
+- [x] Verificar manualmente **Abrir archivo** y **Mostrar en Finder**.
+
+## 3.8 Eliminación de entradas del historial
+
+Estado: implementado y verificado manualmente.
+
+- [x] Eliminar únicamente tareas en estado terminal.
+- [x] Borrar la tarea y sus intentos persistidos sin tocar el archivo final.
+- [x] Publicar la eliminación mediante SSE para todas las vistas abiertas.
+- [x] Solicitar confirmación explícita desde la interfaz.
+- [x] Mantener carga y errores independientes por tarjeta.
+- [x] Cubrir repositorios, servicio, API, eventos y frontend con pruebas.
+- [x] Verificar manualmente que la tarjeta desaparece y el archivo permanece.

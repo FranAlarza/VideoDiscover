@@ -55,3 +55,17 @@ def test_repository_lists_creation_order_and_saves_state() -> None:
         assert items[0].status is DownloadStatus.CANCELLED
 
     asyncio.run(scenario())
+
+
+def test_repository_deletes_only_the_requested_task() -> None:
+    async def scenario() -> None:
+        repository = InMemoryDownloadRepository()
+        first = await repository.create(_task("First"))
+        second = await repository.create(_task("Second"))
+
+        await repository.delete(first.id)
+
+        assert await repository.get(first.id) is None
+        assert [task.id for task in await repository.list()] == [second.id]
+
+    asyncio.run(scenario())

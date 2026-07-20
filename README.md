@@ -10,8 +10,9 @@ La fase 1 está completada: el backend valida y analiza URLs autorizadas de
 YouTube y TikTok sin descargar contenido. Consulta
 [`docs/phase-1.md`](docs/phase-1.md) para ver contratos y evidencias.
 
-La fase 2 del backend está completada. La fase 3 de interfaz está en curso con el
-entorno React, TypeScript y Vite operativo; consulta
+La fase 2 del backend está completada. La fase 3 de interfaz ya incluye análisis,
+descargas reales, progreso, cancelación, historial, reintentos y acciones sobre
+archivos completados; consulta
 [`docs/phase-2.md`](docs/phase-2.md) y [`docs/phase-3.md`](docs/phase-3.md).
 
 ## Estructura
@@ -49,8 +50,8 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
 También puede iniciarse desde la raíz con `./scripts/dev-backend.sh`.
 
-El worker usa por defecto un ejecutor simulado. Para habilitar explícitamente la
-descarga real durante desarrollo:
+`./scripts/dev.sh` usa el ejecutor real. Para arrancar manualmente el backend con
+ese mismo comportamiento:
 
 ```bash
 VD_DOWNLOAD_EXECUTOR=real uv run uvicorn app.main:app \

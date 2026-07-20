@@ -70,6 +70,19 @@ def test_sqlite_repository_round_trips_completed_task(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_sqlite_repository_deletes_task_and_attempts(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        repository = _repository(tmp_path)
+        task = await repository.create(_task("deleted"))
+
+        await repository.delete(task.id)
+
+        assert await repository.get(task.id) is None
+        assert await repository.list() == []
+
+    asyncio.run(scenario())
+
+
 def test_sqlite_repository_claims_fifo_once(tmp_path: Path) -> None:
     async def scenario() -> None:
         repository = _repository(tmp_path)

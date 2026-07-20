@@ -151,6 +151,23 @@ class DownloadTaskService:
         tasks = await self._repository.list()
         return _to_response(saved, _queue_position(saved, tasks))
 
+    async def delete(self, task_id: UUID) -> None:
+        task = await self._repository.get(task_id)
+        if task is None:
+            raise _not_found()
+        if task.status in {
+            DownloadStatus.QUEUED,
+            DownloadStatus.DOWNLOADING,
+            DownloadStatus.PROCESSING,
+        }:
+            raise DownloadApplicationError(
+                "deletion_not_allowed",
+                "Solo se pueden eliminar descargas que ya hayan terminado.",
+                status_code=409,
+            )
+        await self._repository.delete(task_id)
+        await self._publish(task, name="download.deleted", force=True)
+
     async def _publish(
         self,
         task: DownloadTask,

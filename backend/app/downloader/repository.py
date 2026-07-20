@@ -17,6 +17,8 @@ class DownloadRepository(Protocol):
 
     async def save(self, task: DownloadTask) -> DownloadTask: ...
 
+    async def delete(self, task_id: UUID) -> None: ...
+
     async def update_progress(self, task: DownloadTask) -> None: ...
 
     async def claim_next_queued(self) -> DownloadTask | None: ...
@@ -61,6 +63,11 @@ class InMemoryDownloadRepository:
 
     async def update_progress(self, task: DownloadTask) -> None:
         await self.save(task)
+
+    async def delete(self, task_id: UUID) -> None:
+        async with self._lock:
+            if self._tasks.pop(task_id, None) is None:
+                raise KeyError(task_id)
 
     async def claim_next_queued(self) -> DownloadTask | None:
         """Atomically select and start the oldest queued task."""

@@ -26,6 +26,7 @@ from app.events.broker import DownloadEventBroker
 from app.media.inspection import MediaInspectionService
 from app.media.validation import MediaUrlValidationService
 from app.system.diagnostics import DependencyDiagnosticsService
+from app.system.file_actions import DownloadFileActionService
 
 
 def create_app(
@@ -35,6 +36,7 @@ def create_app(
     media_inspection_service: MediaInspectionService | None = None,
     download_task_service: DownloadTaskService | None = None,
     download_worker: DownloadWorker | None = None,
+    download_file_action_service: DownloadFileActionService | None = None,
 ) -> FastAPI:
     """Create an isolated API application instance."""
     runtime_settings = settings or Settings.from_environment()
@@ -45,6 +47,9 @@ def create_app(
     )
     runtime_worker = download_worker
     runtime_event_broker = DownloadEventBroker()
+    runtime_file_actions = download_file_action_service or DownloadFileActionService(
+        runtime_settings.download_output_root
+    )
     if download_task_service is None:
         if runtime_settings.environment == "test":
             repository = InMemoryDownloadRepository()
@@ -87,6 +92,7 @@ def create_app(
         application.state.download_task_service = runtime_download_tasks
         application.state.download_worker = runtime_worker
         application.state.download_event_broker = runtime_event_broker
+        application.state.download_file_action_service = runtime_file_actions
         if runtime_worker is not None:
             await runtime_worker.start()
         try:
@@ -108,7 +114,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=[runtime_settings.frontend_origin],
         allow_credentials=False,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["Content-Type"],
     )
     application.include_router(health_router)

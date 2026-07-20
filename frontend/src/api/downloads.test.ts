@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 import {
   cancelDownload,
   createDownload,
+  deleteDownload,
   DownloadApiError,
+  openDownloadFile,
+  revealDownloadFile,
   retryDownload,
   type DownloadCreateRequest,
 } from "@/api/downloads";
@@ -191,6 +194,91 @@ describe("retryDownload", () => {
     await expect(retryDownload(task.id)).rejects.toMatchObject({
       name: "DownloadApiError",
       code: "retry_not_allowed",
+      status: 409,
+    } satisfies Partial<DownloadApiError>);
+  });
+});
+
+describe("download file actions", () => {
+  it.each([
+    ["open", "opened", openDownloadFile],
+    ["reveal", "revealed", revealDownloadFile],
+  ] as const)("posts to the %s endpoint", async (endpoint, action, performAction) => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ action }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(performAction(task.id)).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(`/api/downloads/${task.id}/${endpoint}`, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      signal: undefined,
+    });
+  });
+
+  it("preserves stable missing-file errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "download_file_missing",
+              message: "El archivo descargado ya no existe en la carpeta de destino.",
+            },
+          }),
+          { status: 404, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+
+    await expect(openDownloadFile(task.id)).rejects.toMatchObject({
+      code: "download_file_missing",
+      status: 404,
+    } satisfies Partial<DownloadApiError>);
+  });
+});
+
+describe("deleteDownload", () => {
+  it("deletes only the history entry through the task endpoint", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify({ deleted: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteDownload(task.id)).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledWith(`/api/downloads/${task.id}`, {
+      method: "DELETE",
+      headers: { Accept: "application/json" },
+      signal: undefined,
+    });
+  });
+
+  it("preserves stable deletion errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "deletion_not_allowed",
+              message: "Solo se pueden eliminar descargas que ya hayan terminado.",
+            },
+          }),
+          { status: 409, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+
+    await expect(deleteDownload(task.id)).rejects.toMatchObject({
+      code: "deletion_not_allowed",
       status: 409,
     } satisfies Partial<DownloadApiError>);
   });

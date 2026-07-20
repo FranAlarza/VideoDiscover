@@ -5,15 +5,19 @@ from uuid import UUID
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from app.downloader.domain import DownloadStatus
 from app.downloader.service import DownloadApplicationError
 from app.media.inspection import MediaInspectionError
 from app.media.validation import UrlValidationError
 from app.models.downloads import (
     DownloadCreateRequest,
+    DownloadDeleteResponse,
+    DownloadFileActionResponse,
     DownloadListResponse,
     DownloadTaskResponse,
 )
 from app.models.media import ValidationErrorDetail, ValidationErrorResponse
+from app.system.file_actions import DownloadFileActionError
 
 router = APIRouter(prefix="/api/downloads", tags=["downloads"])
 
@@ -71,8 +75,60 @@ async def retry_download(
         return _error_response(error)
 
 
+@router.delete("/{task_id}", response_model=DownloadDeleteResponse)
+async def delete_download(
+    task_id: UUID, request: Request
+) -> DownloadDeleteResponse | JSONResponse:
+    try:
+        await request.app.state.download_task_service.delete(task_id)
+        return DownloadDeleteResponse(deleted=True)
+    except DownloadApplicationError as error:
+        return _error_response(error)
+
+
+@router.post("/{task_id}/open", response_model=DownloadFileActionResponse)
+async def open_download_file(
+    task_id: UUID, request: Request
+) -> DownloadFileActionResponse | JSONResponse:
+    return await _perform_file_action(task_id, request, reveal=False)
+
+
+@router.post("/{task_id}/reveal", response_model=DownloadFileActionResponse)
+async def reveal_download_file(
+    task_id: UUID, request: Request
+) -> DownloadFileActionResponse | JSONResponse:
+    return await _perform_file_action(task_id, request, reveal=True)
+
+
+async def _perform_file_action(
+    task_id: UUID, request: Request, *, reveal: bool
+) -> DownloadFileActionResponse | JSONResponse:
+    try:
+        task = await request.app.state.download_task_service.get(task_id)
+        result = task.current_attempt.result
+        if task.status is not DownloadStatus.COMPLETED or result is None:
+            raise DownloadFileActionError(
+                "download_file_not_ready",
+                "La descarga todavía no tiene un archivo final disponible.",
+                status_code=409,
+            )
+        service = request.app.state.download_file_action_service
+        if reveal:
+            service.reveal(result.filename)
+            return DownloadFileActionResponse(action="revealed")
+        service.open(result.filename)
+        return DownloadFileActionResponse(action="opened")
+    except (DownloadApplicationError, DownloadFileActionError) as error:
+        return _error_response(error)
+
+
 def _error_response(
-    error: UrlValidationError | MediaInspectionError | DownloadApplicationError,
+    error: (
+        UrlValidationError
+        | MediaInspectionError
+        | DownloadApplicationError
+        | DownloadFileActionError
+    ),
 ) -> JSONResponse:
     response = ValidationErrorResponse(
         error=ValidationErrorDetail(code=error.code, message=error.message)

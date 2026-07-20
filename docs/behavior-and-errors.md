@@ -118,6 +118,12 @@ La disponibilidad se comprueba inmediatamente antes de reservar la salida. Tempo
 | `download_not_found` | La tarea no existe | No se ha encontrado la descarga solicitada. | Actualizar historial |
 | `cancellation_not_allowed` | Estado no cancelable desde la cola | Esta descarga ya no puede cancelarse desde la cola. | Actualizar estado |
 | `retry_not_allowed` | Estado no reintentable | Solo se pueden reintentar descargas fallidas o interrumpidas. | Actualizar estado |
+| `deletion_not_allowed` | La tarea sigue activa o en cola | Solo se pueden eliminar descargas que ya hayan terminado. | Cancelar o esperar |
+| `download_file_not_ready` | La tarea no está completada | La descarga todavía no tiene un archivo final disponible. | Esperar a que termine |
+| `download_file_missing` | El archivo final ya no existe | El archivo descargado ya no existe en la carpeta de destino. | Revisar la carpeta |
+| `unsafe_output_path` | La ruta final sale de la carpeta autorizada | La ruta del archivo descargado no es segura. | Consultar registro |
+| `file_action_unsupported` | Sistema operativo no compatible | Esta acción todavía solo está disponible en macOS. | Abrir la carpeta manualmente |
+| `file_action_failed` | macOS no pudo ejecutar la acción | No se ha podido abrir el archivo con macOS. | Reintentar o abrirlo manualmente |
 | `invalid_status_transition` | Transición interna no permitida | El estado de la descarga no se puede modificar así. | Consultar registro |
 | `disk_full` | Espacio insuficiente | No hay suficiente espacio en el disco. | Liberar espacio |
 | `output_not_writable` | Sin permisos de escritura | No se puede escribir en la carpeta seleccionada. | Cambiar carpeta |

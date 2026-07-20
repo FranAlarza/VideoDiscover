@@ -9,6 +9,7 @@ export interface DownloadEventClient {
 interface SubscribeOptions {
   onTask: (task: DownloadTask) => void;
   onSnapshot: (tasks: DownloadTask[]) => void;
+  onDelete: (taskId: string) => void;
   onConnectionStatus: (status: DownloadEventConnectionStatus) => void;
   EventSourceClass?: typeof EventSource;
 }
@@ -16,6 +17,7 @@ interface SubscribeOptions {
 export function subscribeToDownloadEvents({
   onTask,
   onSnapshot,
+  onDelete,
   onConnectionStatus,
   EventSourceClass = EventSource,
 }: SubscribeOptions): DownloadEventClient {
@@ -46,6 +48,13 @@ export function subscribeToDownloadEvents({
     const task = parseTaskEvent(event);
     if (task) {
       onTask(task);
+    }
+  });
+
+  source.addEventListener("download.deleted", (event) => {
+    const task = parseTaskEvent(event);
+    if (task) {
+      onDelete(task.id);
     }
   });
 

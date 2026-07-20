@@ -74,8 +74,11 @@ POST /api/media/inspect
 POST /api/downloads
 GET  /api/downloads
 GET  /api/downloads/{id}
+DELETE /api/downloads/{id}
 POST /api/downloads/{id}/cancel
 POST /api/downloads/{id}/retry
+POST /api/downloads/{id}/open
+POST /api/downloads/{id}/reveal
 GET  /api/events
 ```
 

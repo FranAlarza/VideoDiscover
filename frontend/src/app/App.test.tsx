@@ -619,6 +619,159 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Reintentar" })).toBeEnabled();
     expect(screen.getByText("Fallida")).toBeVisible();
   });
+
+  it("opens and reveals the file from a completed download card", async () => {
+    const user = userEvent.setup();
+    const completedTask = createCompletedDownloadTask();
+    const fetchMock = createHistoryMock([completedTask], undefined, (input) => {
+      if (requestUrl(input).endsWith(`/${downloadTask.id}/open`)) {
+        return Promise.resolve(jsonResponse({ action: "opened" }));
+      }
+      if (requestUrl(input).endsWith(`/${downloadTask.id}/reveal`)) {
+        return Promise.resolve(jsonResponse({ action: "revealed" }));
+      }
+      return null;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Abrir archivo" }));
+    await user.click(screen.getByRole("button", { name: "Mostrar en Finder" }));
+
+    expect(fetchMock).toHaveBeenCalledWith(`/api/downloads/${downloadTask.id}/open`, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      signal: undefined,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(`/api/downloads/${downloadTask.id}/reveal`, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      signal: undefined,
+    });
+    expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
+  });
+
+  it("blocks duplicate file actions and displays a card-specific error", async () => {
+    const user = userEvent.setup();
+    const completedTask = createCompletedDownloadTask();
+    let resolveAction: ((response: Response) => void) | undefined;
+    const pendingAction = new Promise<Response>((resolve) => {
+      resolveAction = resolve;
+    });
+    const fetchMock = createHistoryMock([completedTask], undefined, (input) =>
+      requestUrl(input).endsWith(`/${downloadTask.id}/open`) ? pendingAction : null,
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Abrir archivo" }));
+
+    expect(screen.getByRole("button", { name: "Abriendo…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Mostrar en Finder" })).toBeDisabled();
+    resolveAction?.(
+      jsonResponse(
+        {
+          error: {
+            code: "download_file_missing",
+            message: "El archivo descargado ya no existe en la carpeta de destino.",
+          },
+        },
+        404,
+      ),
+    );
+
+    expect(
+      await screen.findByText(
+        "El archivo descargado ya no existe en la carpeta de destino.",
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Abrir archivo" })).toBeEnabled();
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        requestUrl(input).endsWith(`/${downloadTask.id}/open`),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("confirms and removes a terminal history entry", async () => {
+    const user = userEvent.setup();
+    const completedTask = createCompletedDownloadTask();
+    const fetchMock = createHistoryMock([completedTask], undefined, (input) =>
+      requestUrl(input) === `/api/downloads/${downloadTask.id}`
+        ? Promise.resolve(jsonResponse({ deleted: true }))
+        : null,
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Eliminar del historial" }),
+    );
+
+    expect(
+      screen.getByRole("dialog", { name: "¿Eliminar esta entrada?" }),
+    ).toHaveTextContent("el archivo descargado no se borrará");
+    await user.click(screen.getByRole("button", { name: "Conservar" }));
+    expect(screen.getByRole("heading", { name: "Demo descargable" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Eliminar del historial" }));
+    await user.click(screen.getByRole("button", { name: "Eliminar entrada" }));
+
+    expect(await screen.findByText(/Todavía no hay descargas/)).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Demo descargable" })).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(`/api/downloads/${downloadTask.id}`, {
+      method: "DELETE",
+      headers: { Accept: "application/json" },
+      signal: undefined,
+    });
+  });
+
+  it("removes a history entry when another view publishes its deletion", async () => {
+    const completedTask = createCompletedDownloadTask();
+    vi.stubGlobal("fetch", createHistoryMock([completedTask]));
+    render(<App />);
+    await screen.findByRole("heading", { name: "Demo descargable" });
+
+    FakeEventSource.instances[0]?.emit("download.deleted", {
+      occurred_at: "2026-07-20T18:00:00Z",
+      task: completedTask,
+    });
+
+    expect(await screen.findByText(/Todavía no hay descargas/)).toBeVisible();
+  });
+
+  it("keeps the card and shows an isolated deletion error", async () => {
+    const user = userEvent.setup();
+    const completedTask = createCompletedDownloadTask();
+    const fetchMock = createHistoryMock([completedTask], undefined, (input) =>
+      requestUrl(input) === `/api/downloads/${downloadTask.id}`
+        ? Promise.resolve(
+            jsonResponse(
+              {
+                error: {
+                  code: "history_delete_failed",
+                  message: "No se ha podido eliminar la entrada del historial.",
+                },
+              },
+              500,
+            ),
+          )
+        : null,
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await user.click(
+      await screen.findByRole("button", { name: "Eliminar del historial" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Eliminar entrada" }));
+
+    expect(
+      await screen.findByText("No se ha podido eliminar la entrada del historial."),
+    ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Demo descargable" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Eliminar del historial" })).toBeEnabled();
+  });
 });
 
 class FakeEventSource extends EventTarget {
@@ -764,6 +917,32 @@ function createFailedDownloadTask() {
       failure: { code: "network_error", message: "La conexión se interrumpió." },
     },
   };
+}
+
+function createCompletedDownloadTask() {
+  return {
+    ...downloadTask,
+    status: "completed",
+    queue_position: null,
+    current_attempt: {
+      ...downloadTask.current_attempt,
+      status: "completed",
+      finished_at: "2026-07-20T16:50:00Z",
+      result: {
+        filename: "Demo descargable.mp4",
+        extension: "mp4",
+        size_bytes: 1_000_000,
+        effective_quality: 720,
+      },
+    },
+  };
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 const downloadTask = {

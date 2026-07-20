@@ -1,6 +1,7 @@
 """Public download task API contracts."""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -102,3 +103,15 @@ class DownloadListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     items: list[DownloadTaskResponse]
+
+
+class DownloadFileActionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["opened", "revealed"]
+
+
+class DownloadDeleteResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    deleted: Literal[True]

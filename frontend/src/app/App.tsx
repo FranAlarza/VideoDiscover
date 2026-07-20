@@ -7,8 +7,11 @@ import {
 import {
   cancelDownload,
   createDownload,
+  deleteDownload,
   DownloadApiError,
   getDownloads,
+  openDownloadFile,
+  revealDownloadFile,
   retryDownload,
   type DownloadTask,
 } from "@/api/downloads";
@@ -28,6 +31,7 @@ type InspectState =
   | { status: "error"; media: null; error: string };
 
 type OutputMode = "video" | "audio";
+type FileAction = "open" | "reveal";
 
 type DownloadCreationState =
   | { status: "idle"; error: null }
@@ -69,6 +73,12 @@ export function App() {
   const [cancelErrors, setCancelErrors] = useState<Record<string, string>>({});
   const [retryingTaskIds, setRetryingTaskIds] = useState<string[]>([]);
   const [retryErrors, setRetryErrors] = useState<Record<string, string>>({});
+  const [fileActions, setFileActions] = useState<Record<string, FileAction>>({});
+  const [fileActionErrors, setFileActionErrors] = useState<Record<string, string>>({});
+  const [deleteConfirmationTask, setDeleteConfirmationTask] =
+    useState<DownloadTask | null>(null);
+  const [deletingTaskIds, setDeletingTaskIds] = useState<string[]>([]);
+  const [deleteErrors, setDeleteErrors] = useState<Record<string, string>>({});
   const [downloadEventsStatus, setDownloadEventsStatus] =
     useState<DownloadEventConnectionStatus>("connecting");
   const [inspectState, setInspectState] = useState<InspectState>({
@@ -114,6 +124,12 @@ export function App() {
           tasks: normalizeDownloadTasks(tasks),
           error: null,
         });
+      },
+      onDelete: (taskId) => {
+        setDownloadHistory((current) => ({
+          ...current,
+          tasks: current.tasks.filter((task) => task.id !== taskId),
+        }));
       },
       onConnectionStatus: setDownloadEventsStatus,
     });
@@ -254,6 +270,58 @@ export function App() {
           : "No se ha podido conectar con el backend.";
       setRetryErrors((current) => ({ ...current, [taskId]: message }));
       setRetryingTaskIds((current) =>
+        current.filter((candidate) => candidate !== taskId),
+      );
+    }
+  }
+
+  async function handleFileAction(downloadTask: DownloadTask, action: FileAction) {
+    if (fileActions[downloadTask.id] || !hasCompletedFile(downloadTask)) return;
+
+    const taskId = downloadTask.id;
+    setFileActions((current) => ({ ...current, [taskId]: action }));
+    setFileActionErrors((current) => omitRecordKey(current, taskId));
+
+    try {
+      if (action === "open") {
+        await openDownloadFile(taskId);
+      } else {
+        await revealDownloadFile(taskId);
+      }
+    } catch (error) {
+      const message =
+        error instanceof DownloadApiError
+          ? error.message
+          : "No se ha podido conectar con el backend.";
+      setFileActionErrors((current) => ({ ...current, [taskId]: message }));
+    } finally {
+      setFileActions((current) => omitRecordKey(current, taskId));
+    }
+  }
+
+  async function confirmDeleteDownload() {
+    const downloadTask = deleteConfirmationTask;
+    if (!downloadTask || deletingTaskIds.includes(downloadTask.id)) return;
+
+    const taskId = downloadTask.id;
+    setDeleteConfirmationTask(null);
+    setDeletingTaskIds((current) => [...current, taskId]);
+    setDeleteErrors((current) => omitRecordKey(current, taskId));
+
+    try {
+      await deleteDownload(taskId);
+      setDownloadHistory((current) => ({
+        ...current,
+        tasks: current.tasks.filter((task) => task.id !== taskId),
+      }));
+    } catch (error) {
+      const message =
+        error instanceof DownloadApiError
+          ? error.message
+          : "No se ha podido conectar con el backend.";
+      setDeleteErrors((current) => ({ ...current, [taskId]: message }));
+    } finally {
+      setDeletingTaskIds((current) =>
         current.filter((candidate) => candidate !== taskId),
       );
     }
@@ -476,8 +544,14 @@ export function App() {
                   cancelError={cancelErrors[task.id] ?? null}
                   isRetrying={retryingTaskIds.includes(task.id)}
                   retryError={retryErrors[task.id] ?? null}
+                  fileAction={fileActions[task.id] ?? null}
+                  fileActionError={fileActionErrors[task.id] ?? null}
+                  isDeleting={deletingTaskIds.includes(task.id)}
+                  deleteError={deleteErrors[task.id] ?? null}
                   onCancel={handleCancelDownload}
                   onRetry={handleRetryDownload}
+                  onFileAction={handleFileAction}
+                  onRequestDelete={setDeleteConfirmationTask}
                 />
               ))}
             </div>
@@ -521,6 +595,43 @@ export function App() {
           </section>
         </div>
       ) : null}
+
+      {deleteConfirmationTask ? (
+        <div className="dialog-backdrop">
+          <section
+            className="usage-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-dialog-title"
+            aria-describedby="delete-dialog-description"
+          >
+            <p className="eyebrow">Eliminar del historial</p>
+            <h2 id="delete-dialog-title">¿Eliminar esta entrada?</h2>
+            <p id="delete-dialog-description">
+              La entrada desaparecerá del historial, pero el archivo descargado no se
+              borrará de tu Mac.
+            </p>
+            <div className="usage-dialog__actions">
+              <button
+                className="secondary-button"
+                type="button"
+                onClick={() => setDeleteConfirmationTask(null)}
+              >
+                Conservar
+              </button>
+              <button
+                className="primary-button primary-button--danger"
+                type="button"
+                onClick={() => {
+                  void confirmDeleteDownload();
+                }}
+              >
+                Eliminar entrada
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
@@ -532,8 +643,14 @@ interface DownloadCardProps {
   cancelError: string | null;
   isRetrying: boolean;
   retryError: string | null;
+  fileAction: FileAction | null;
+  fileActionError: string | null;
+  isDeleting: boolean;
+  deleteError: string | null;
   onCancel: (task: DownloadTask) => Promise<void>;
   onRetry: (task: DownloadTask) => Promise<void>;
+  onFileAction: (task: DownloadTask, action: FileAction) => Promise<void>;
+  onRequestDelete: (task: DownloadTask) => void;
 }
 
 function DownloadCard({
@@ -543,8 +660,14 @@ function DownloadCard({
   cancelError,
   isRetrying,
   retryError,
+  fileAction,
+  fileActionError,
+  isDeleting,
+  deleteError,
   onCancel,
   onRetry,
+  onFileAction,
+  onRequestDelete,
 }: DownloadCardProps) {
   const titleId = `download-title-${task.id}`;
   const progress = visibleProgress(task);
@@ -609,6 +732,16 @@ function DownloadCard({
           {retryError}
         </p>
       ) : null}
+      {fileActionError ? (
+        <p className="download-card__message download-card__message--error" role="alert">
+          {fileActionError}
+        </p>
+      ) : null}
+      {deleteError ? (
+        <p className="download-card__message download-card__message--error" role="alert">
+          {deleteError}
+        </p>
+      ) : null}
       {eventsDisconnected && isActiveDownload(task) ? (
         <p className="download-card__message">
           Reconectando con el backend para actualizar el progreso...
@@ -639,6 +772,42 @@ function DownloadCard({
             }}
           >
             {isRetrying ? "Reintentando…" : "Reintentar"}
+          </button>
+        </div>
+      ) : null}
+      {hasCompletedFile(task) ? (
+        <div className="download-card__actions">
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={fileAction !== null}
+            onClick={() => {
+              void onFileAction(task, "open");
+            }}
+          >
+            {fileAction === "open" ? "Abriendo…" : "Abrir archivo"}
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={fileAction !== null}
+            onClick={() => {
+              void onFileAction(task, "reveal");
+            }}
+          >
+            {fileAction === "reveal" ? "Mostrando…" : "Mostrar en Finder"}
+          </button>
+        </div>
+      ) : null}
+      {isTerminalDownload(task) ? (
+        <div className="download-card__actions">
+          <button
+            className="secondary-button secondary-button--danger"
+            type="button"
+            disabled={isDeleting}
+            onClick={() => onRequestDelete(task)}
+          >
+            {isDeleting ? "Eliminando…" : "Eliminar del historial"}
           </button>
         </div>
       ) : null}
@@ -687,6 +856,14 @@ function isRetryableDownload(task: DownloadTask): boolean {
   return task.status === "failed" || task.status === "interrupted";
 }
 
+function hasCompletedFile(task: DownloadTask): boolean {
+  return task.status === "completed" && task.current_attempt.result !== null;
+}
+
+function isTerminalDownload(task: DownloadTask): boolean {
+  return !isActiveDownload(task);
+}
+
 function upsertDownloadTask(
   tasks: DownloadTask[],
   updatedTask: DownloadTask,
@@ -716,10 +893,10 @@ function normalizeDownloadTasks(tasks: DownloadTask[]): DownloadTask[] {
   );
 }
 
-function omitRecordKey(
-  record: Record<string, string>,
+function omitRecordKey<Value>(
+  record: Record<string, Value>,
   keyToOmit: string,
-): Record<string, string> {
+): Record<string, Value> {
   return Object.fromEntries(Object.entries(record).filter(([key]) => key !== keyToOmit));
 }
 

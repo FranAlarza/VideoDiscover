@@ -109,6 +109,21 @@ class SqliteDownloadRepository:
         async with self._lock:
             self._live_progress[task.id] = deepcopy(task.current_attempt.progress)
 
+    async def delete(self, task_id: UUID) -> None:
+        async with self._lock:
+            deleted = await asyncio.to_thread(self._delete_sync, task_id)
+            if not deleted:
+                raise KeyError(task_id)
+            self._live_progress.pop(task_id, None)
+
+    def _delete_sync(self, task_id: UUID) -> bool:
+        with Session(self._engine) as session, session.begin():
+            existing = session.get(DownloadRecord, str(task_id))
+            if existing is None:
+                return False
+            session.delete(existing)
+            return True
+
     async def claim_next_queued(self) -> DownloadTask | None:
         async with self._lock:
             return await asyncio.to_thread(self._claim_next_sync)

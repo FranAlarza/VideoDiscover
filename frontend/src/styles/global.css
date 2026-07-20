@@ -182,6 +182,14 @@ h1 {
   background: var(--accent-strong);
 }
 
+.primary-button--danger {
+  background: var(--danger);
+}
+
+.primary-button--danger:hover:not(:disabled) {
+  background: #8f2e27;
+}
+
 .secondary-button {
   min-height: 48px;
   border: 1px solid var(--border);
@@ -449,7 +457,9 @@ h1 {
 
 .download-card__actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  gap: 10px;
 }
 
 .about {

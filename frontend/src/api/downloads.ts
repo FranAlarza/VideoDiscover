@@ -165,6 +165,71 @@ export async function retryDownload(
   return payload;
 }
 
+export async function openDownloadFile(
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await performDownloadFileAction(taskId, "open", "opened", signal);
+}
+
+export async function revealDownloadFile(
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await performDownloadFileAction(taskId, "reveal", "revealed", signal);
+}
+
+export async function deleteDownload(
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(`/api/downloads/${encodeURIComponent(taskId)}`, {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+    signal,
+  });
+  const payload: unknown = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw toDownloadApiError(payload, response.status);
+  }
+  if (!isRecord(payload) || payload.deleted !== true) {
+    throw new DownloadApiError(
+      "La respuesta del backend no tiene el formato esperado.",
+      "invalid_response",
+      response.status,
+    );
+  }
+}
+
+async function performDownloadFileAction(
+  taskId: string,
+  endpoint: "open" | "reveal",
+  expectedAction: "opened" | "revealed",
+  signal?: AbortSignal,
+): Promise<void> {
+  const response = await fetch(
+    `/api/downloads/${encodeURIComponent(taskId)}/${endpoint}`,
+    {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      signal,
+    },
+  );
+  const payload: unknown = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw toDownloadApiError(payload, response.status);
+  }
+  if (!isRecord(payload) || payload.action !== expectedAction) {
+    throw new DownloadApiError(
+      "La respuesta del backend no tiene el formato esperado.",
+      "invalid_response",
+      response.status,
+    );
+  }
+}
+
 function toDownloadApiError(payload: unknown, status: number): DownloadApiError {
   if (isRecord(payload) && isRecord(payload.error)) {
     const { code, message } = payload.error;
