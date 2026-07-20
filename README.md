@@ -32,3 +32,15 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 También puede iniciarse desde la raíz con `./scripts/dev-backend.sh`.
+
+El worker usa por defecto un ejecutor simulado. Para habilitar explícitamente la
+descarga real durante desarrollo:
+
+```bash
+VD_DOWNLOAD_EXECUTOR=real uv run uvicorn app.main:app \
+  --host 127.0.0.1 --port 8000
+```
+
+Los archivos terminados se guardan en `downloads/` y cada ejecución usa un
+subdirectorio aislado en `downloads/.temporary/`. Se pueden cambiar mediante
+`VD_DOWNLOAD_OUTPUT_ROOT` y `VD_DOWNLOAD_TEMPORARY_ROOT`.

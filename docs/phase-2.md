@@ -113,12 +113,62 @@ una entrega posterior usando el protocolo `DownloadRepository` ya definido.
 - Una tarea activa previa se convierte en `interrupted` al arrancar.
 - Suite completa: 92 pruebas aprobadas; Ruff lint y formato aprobados.
 
-## 2.3 Siguiente entrega — Ejecutor real
+## 2.3 Ejecutor real
 
-Se integrará `yt-dlp` detrás del contrato `DownloadExecutor`, con temporales por
-tarea, selección de formato, progreso real, cancelación del proceso y publicación
-segura del archivo final. Hasta entonces, los resultados del worker son simulados
-y no representan archivos existentes.
+Estado de implementación: completado; flujo real principal verificado.
+
+- [x] Integrar `yt-dlp` detrás del contrato `DownloadExecutor`.
+- [x] Mantener el modo simulado como opción predeterminada segura.
+- [x] Habilitar el modo real únicamente con `VD_DOWNLOAD_EXECUTOR=real`.
+- [x] Crear un staging impredecible y exclusivo por UUID.
+- [x] Limitar vídeo a la altura solicitada y producir MP4 con H.264 + AAC para
+  compatibilidad con QuickTime.
+- [x] Extraer audio a MP3 con el bitrate solicitado.
+- [x] Ejecutar `yt-dlp` en un proceso `spawn`, sin shell.
+- [x] Comunicar progreso y comienzo del postprocesado mediante IPC.
+- [x] Terminar únicamente el proceso de la tarea cancelada.
+- [x] Sanear nombres y bloquear semántica de rutas en títulos/extensiones.
+- [x] Resolver colisiones con sufijos sin sobrescribir archivos.
+- [x] Verificar que el resultado procede del staging autorizado.
+- [x] Publicar el resultado en la carpeta final y limpiar el staging.
+- [x] Traducir errores comunes a códigos y mensajes estables.
+
+### Configuración
+
+```text
+VD_DOWNLOAD_EXECUTOR=simulated|real
+VD_DOWNLOAD_OUTPUT_ROOT=/ruta/autorizada
+VD_DOWNLOAD_TEMPORARY_ROOT=/ruta/temporal
+VD_NODE_BINARY=/ruta/a/node
+```
+
+Los valores predeterminados de desarrollo son `simulated`, `downloads/` y
+`downloads/.temporary/`. La API nunca devuelve la URL canónica ni rutas físicas.
+
+### Evidencia automatizada
+
+- Selección acotada de vídeo y conversión MP3 verificadas sin red.
+- Traversal, caracteres de control y extensiones maliciosas rechazados o saneados.
+- Colisiones verificadas conservando intacto el archivo existente.
+- Progreso y procesamiento propagados mediante callbacks.
+- Cancelación cooperativa y limpieza del staging verificadas.
+- Publicación y resultado final verificados con un runner falso.
+- Suite completa: 106 pruebas aprobadas; Ruff lint y formato aprobados.
+
+### Evidencia manual — 20 de julio de 2026, macOS Apple Silicon
+
+- YouTube MP4 autorizado a 720p: `completed`, progreso 100 %, calidad efectiva
+  720p y archivo final publicado sin exponer su ruta en la API. La primera
+  selección AV1 + Opus mostró pantalla negra en QuickTime; se corrigió el selector
+  para exigir H.264 + AAC. La segunda descarga se reprodujo correctamente con
+  imagen y sonido en QuickTime, sin advertencias.
+- Audio autorizado a 192 kbps: `completed`, progreso 100 % y archivo MP3 final.
+- Cancelación real durante `downloading`: transición a `cancelled` en menos de un
+  segundo, sin resultado final ni fallo.
+- Tras completar y cancelar, `downloads/.temporary/` quedó vacío y no aparecieron
+  archivos `.part` ni `.ytdl`.
+- MP4 y MP3 se reprodujeron correctamente. `ffprobe` identificó la causa de la
+  primera incompatibilidad y la salida compatible quedó verificada en QuickTime.
 
 ## Puerta de salida de la fase 2
 

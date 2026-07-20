@@ -1,5 +1,7 @@
 """FastAPI application factory."""
 
+import os
+import shutil
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
@@ -12,9 +14,11 @@ from app.api.health import router as health_router
 from app.api.media import router as media_router
 from app.config import Settings
 from app.downloader.executor import SimulatedDownloadExecutor
+from app.downloader.paths import DownloadPathPolicy
 from app.downloader.repository import InMemoryDownloadRepository
 from app.downloader.service import DownloadTaskService
 from app.downloader.worker import DownloadWorker
+from app.downloader.yt_dlp_executor import YtDlpDownloadExecutor
 from app.media.inspection import MediaInspectionService
 from app.media.validation import MediaUrlValidationService
 from app.system.diagnostics import DependencyDiagnosticsService
@@ -38,9 +42,20 @@ def create_app(
     runtime_worker = download_worker
     if download_task_service is None:
         repository = InMemoryDownloadRepository()
-        runtime_worker = runtime_worker or DownloadWorker(
-            repository, SimulatedDownloadExecutor()
-        )
+        if runtime_worker is None:
+            executor = SimulatedDownloadExecutor()
+            if runtime_settings.download_executor == "real":
+                node_binary = os.getenv("VD_NODE_BINARY") or shutil.which("node")
+                if not node_binary:
+                    raise RuntimeError("Node.js is required by the real executor")
+                executor = YtDlpDownloadExecutor(
+                    DownloadPathPolicy(
+                        output_root=runtime_settings.download_output_root,
+                        temporary_root=runtime_settings.download_temporary_root,
+                    ),
+                    node_binary=node_binary,
+                )
+            runtime_worker = DownloadWorker(repository, executor)
         runtime_download_tasks = DownloadTaskService(
             repository,
             runtime_media_url_validator,
