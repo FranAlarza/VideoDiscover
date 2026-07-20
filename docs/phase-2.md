@@ -60,9 +60,8 @@ GET  /api/downloads/{id}
 POST /api/downloads/{id}/cancel
 ```
 
-En esta entrega las tareas permanecen en `queued`; todavía no existe un worker de
-descarga. Cancelar crea una transición terminal en el intento sin borrar la tarea
-ni su historial.
+El worker simulado procesa automáticamente las tareas. Permite comprobar cola,
+progreso, procesamiento y cancelación sin acceder a la red ni crear archivos.
 
 ### Máquina de estados
 
@@ -93,15 +92,33 @@ una entrega posterior usando el protocolo `DownloadRepository` ya definido.
   finalización y sin posición de cola.
 - No se crearon vídeos, audios, `.part` ni `.ytdl`.
 
-## 2.2 Siguiente entrega — Cola FIFO
+## 2.2 Cola FIFO y worker simulado
 
-- [ ] Crear un coordinador de cola con una única tarea activa.
-- [ ] Desencolar en orden de creación.
-- [ ] Avanzar tras completar, fallar o cancelar.
-- [ ] Impedir que dos tareas entren simultáneamente en `downloading`.
-- [ ] Recuperar tareas pendientes al iniciar el servicio.
-- [ ] Publicar transiciones mediante eventos internos.
-- [ ] Usar un ejecutor falso; la descarga real llegará después.
+- [x] Crear un coordinador de cola con una única tarea activa.
+- [x] Reclamar atómicamente y desencolar en orden de creación.
+- [x] Avanzar tras completar, fallar o cancelar.
+- [x] Impedir ejecuciones duplicadas y descargas simultáneas.
+- [x] Recuperar tareas pendientes al iniciar el servicio.
+- [x] Marcar como `interrupted` las tareas que quedaron activas.
+- [x] Publicar progreso mediante callbacks internos.
+- [x] Cancelar tareas activas mediante una señal cooperativa.
+- [x] Apagar ordenadamente el worker.
+- [x] Usar un ejecutor simulado sin red ni escrituras.
+
+### Evidencia de la entrega 2.2
+
+- Orden FIFO verificado con tres tareas.
+- La cola continúa después de un fallo y después de una cancelación activa.
+- Progreso, procesamiento, resultado y error se guardan en el repositorio.
+- Una tarea activa previa se convierte en `interrupted` al arrancar.
+- Suite completa: 92 pruebas aprobadas; Ruff lint y formato aprobados.
+
+## 2.3 Siguiente entrega — Ejecutor real
+
+Se integrará `yt-dlp` detrás del contrato `DownloadExecutor`, con temporales por
+tarea, selección de formato, progreso real, cancelación del proceso y publicación
+segura del archivo final. Hasta entonces, los resultados del worker son simulados
+y no representan archivos existentes.
 
 ## Puerta de salida de la fase 2
 

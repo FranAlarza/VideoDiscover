@@ -5,7 +5,7 @@ from copy import deepcopy
 from typing import Protocol
 from uuid import UUID
 
-from app.downloader.domain import DownloadTask
+from app.downloader.domain import DownloadStatus, DownloadTask
 
 
 class DownloadRepository(Protocol):
@@ -16,6 +16,10 @@ class DownloadRepository(Protocol):
     async def list(self) -> list[DownloadTask]: ...
 
     async def save(self, task: DownloadTask) -> DownloadTask: ...
+
+    async def claim_next_queued(self) -> DownloadTask | None: ...
+
+    async def interrupt_active(self) -> int: ...
 
 
 class InMemoryDownloadRepository:
@@ -52,3 +56,33 @@ class InMemoryDownloadRepository:
                 raise KeyError(task.id)
             self._tasks[task.id] = deepcopy(task)
             return deepcopy(task)
+
+    async def claim_next_queued(self) -> DownloadTask | None:
+        """Atomically select and start the oldest queued task."""
+        async with self._lock:
+            queued = sorted(
+                (
+                    task
+                    for task in self._tasks.values()
+                    if task.status is DownloadStatus.QUEUED
+                ),
+                key=lambda item: item.created_at,
+            )
+            if not queued:
+                return None
+            task = queued[0]
+            task.current_attempt.transition_to(DownloadStatus.DOWNLOADING)
+            return deepcopy(task)
+
+    async def interrupt_active(self) -> int:
+        """Mark work left active by a previous application run as interrupted."""
+        async with self._lock:
+            interrupted = 0
+            for task in self._tasks.values():
+                if task.status in {
+                    DownloadStatus.DOWNLOADING,
+                    DownloadStatus.PROCESSING,
+                }:
+                    task.current_attempt.transition_to(DownloadStatus.INTERRUPTED)
+                    interrupted += 1
+            return interrupted

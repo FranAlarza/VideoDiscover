@@ -8,6 +8,7 @@ from app.downloader.domain import (
     DownloadTask,
 )
 from app.downloader.repository import DownloadRepository
+from app.downloader.worker import DownloadWorker
 from app.media.inspection import MediaInspectionService
 from app.media.validation import MediaUrlValidationService
 from app.models.downloads import (
@@ -36,10 +37,12 @@ class DownloadTaskService:
         repository: DownloadRepository,
         validator: MediaUrlValidationService,
         inspection_service: MediaInspectionService,
+        worker: DownloadWorker | None = None,
     ) -> None:
         self._repository = repository
         self._validator = validator
         self._inspection_service = inspection_service
+        self._worker = worker
 
     async def create(self, request: DownloadCreateRequest) -> DownloadTaskResponse:
         validated = await self._validator.validate(request.url)
@@ -72,6 +75,8 @@ class DownloadTaskService:
             selection=selection,
         )
         created = await self._repository.create(task)
+        if self._worker is not None:
+            self._worker.notify()
         tasks = await self._repository.list()
         return _to_response(created, _queue_position(created, tasks))
 
@@ -92,15 +97,23 @@ class DownloadTaskService:
         task = await self._repository.get(task_id)
         if task is None:
             raise _not_found()
+        if task.status is DownloadStatus.QUEUED:
+            task.current_attempt.transition_to(DownloadStatus.CANCELLED)
+            saved = await self._repository.save(task)
+            return _to_response(saved, None)
+        if (
+            task.status in {DownloadStatus.DOWNLOADING, DownloadStatus.PROCESSING}
+            and self._worker is not None
+            and self._worker.request_cancel(task_id)
+        ):
+            return _to_response(task, None)
         if task.status is not DownloadStatus.QUEUED:
             raise DownloadApplicationError(
                 "cancellation_not_allowed",
                 "Esta descarga ya no puede cancelarse desde la cola.",
                 status_code=409,
             )
-        task.current_attempt.transition_to(DownloadStatus.CANCELLED)
-        saved = await self._repository.save(task)
-        return _to_response(saved, None)
+        raise AssertionError("unreachable")
 
 
 def _not_found() -> DownloadApplicationError:

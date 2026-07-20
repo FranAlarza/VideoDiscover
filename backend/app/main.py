@@ -11,8 +11,10 @@ from app.api.downloads import router as downloads_router
 from app.api.health import router as health_router
 from app.api.media import router as media_router
 from app.config import Settings
+from app.downloader.executor import SimulatedDownloadExecutor
 from app.downloader.repository import InMemoryDownloadRepository
 from app.downloader.service import DownloadTaskService
+from app.downloader.worker import DownloadWorker
 from app.media.inspection import MediaInspectionService
 from app.media.validation import MediaUrlValidationService
 from app.system.diagnostics import DependencyDiagnosticsService
@@ -24,6 +26,7 @@ def create_app(
     media_url_validator: MediaUrlValidationService | None = None,
     media_inspection_service: MediaInspectionService | None = None,
     download_task_service: DownloadTaskService | None = None,
+    download_worker: DownloadWorker | None = None,
 ) -> FastAPI:
     """Create an isolated API application instance."""
     runtime_settings = settings or Settings.from_environment()
@@ -32,11 +35,20 @@ def create_app(
     runtime_media_inspection = media_inspection_service or MediaInspectionService(
         runtime_media_url_validator
     )
-    runtime_download_tasks = download_task_service or DownloadTaskService(
-        InMemoryDownloadRepository(),
-        runtime_media_url_validator,
-        runtime_media_inspection,
-    )
+    runtime_worker = download_worker
+    if download_task_service is None:
+        repository = InMemoryDownloadRepository()
+        runtime_worker = runtime_worker or DownloadWorker(
+            repository, SimulatedDownloadExecutor()
+        )
+        runtime_download_tasks = DownloadTaskService(
+            repository,
+            runtime_media_url_validator,
+            runtime_media_inspection,
+            runtime_worker,
+        )
+    else:
+        runtime_download_tasks = download_task_service
     docs_url = "/docs" if runtime_settings.docs_enabled else None
     openapi_url = "/openapi.json" if runtime_settings.docs_enabled else None
 
@@ -46,9 +58,14 @@ def create_app(
         application.state.media_url_validator = runtime_media_url_validator
         application.state.media_inspection_service = runtime_media_inspection
         application.state.download_task_service = runtime_download_tasks
+        application.state.download_worker = runtime_worker
+        if runtime_worker is not None:
+            await runtime_worker.start()
         try:
             yield
         finally:
+            if runtime_worker is not None:
+                await runtime_worker.shutdown()
             await runtime_media_inspection.shutdown()
 
     application = FastAPI(
