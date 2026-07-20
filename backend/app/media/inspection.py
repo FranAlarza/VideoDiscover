@@ -4,17 +4,26 @@ import asyncio
 import multiprocessing
 import os
 import shutil
+import threading
+from collections.abc import Callable
+from datetime import datetime
 from multiprocessing.connection import Connection
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
-from app.media.validation import MediaUrlValidationService
+from app.media.validation import (
+    MediaUrlValidationService,
+    NetworkSafetyChecker,
+    UrlValidationError,
+)
 from app.models.inspection import MediaInspectionResponse
 from app.models.media import ValidatedMediaUrl
 
 _VIDEO_QUALITIES = {360, 480, 720, 1080, 1440, 2160}
 _DEFAULT_NODE_24 = Path("/opt/homebrew/opt/node@24/bin/node")
+_MAX_DURATION_SECONDS = 7 * 24 * 60 * 60
+_MAX_ESTIMATED_SIZE = 10 * 1024**4
 
 _ERROR_MESSAGES = {
     "private_media": "Este contenido es privado o requiere iniciar sesión.",
@@ -68,21 +77,47 @@ class InspectionRunner(Protocol):
         self, canonical_url: str, node_binary: str, timeout_seconds: float
     ) -> dict[str, Any]: ...
 
+    def shutdown(self) -> None: ...
+
 
 class ProcessInspectionRunner:
     """Run yt-dlp in a spawn process that can be terminated on timeout."""
 
+    def __init__(
+        self,
+        *,
+        worker_target: Callable[[Connection, str, str], None] | None = None,
+    ) -> None:
+        self._worker_target = worker_target or _yt_dlp_worker
+        self._active_processes: set[multiprocessing.Process] = set()
+        self._lock = threading.Lock()
+        self._closed = False
+
+    @property
+    def active_process_count(self) -> int:
+        with self._lock:
+            return len(self._active_processes)
+
     def inspect(
         self, canonical_url: str, node_binary: str, timeout_seconds: float
     ) -> dict[str, Any]:
+        with self._lock:
+            if self._closed:
+                raise MediaInspectionError("inspection_unavailable", status_code=503)
+
         context = multiprocessing.get_context("spawn")
         parent_connection, child_connection = context.Pipe(duplex=False)
         process = context.Process(
-            target=_yt_dlp_worker,
+            target=self._worker_target,
             args=(child_connection, canonical_url, node_binary),
             daemon=True,
         )
         process.start()
+        with self._lock:
+            if self._closed:
+                _stop_process(process)
+                raise MediaInspectionError("inspection_unavailable", status_code=503)
+            self._active_processes.add(process)
         child_connection.close()
 
         try:
@@ -100,6 +135,8 @@ class ProcessInspectionRunner:
             parent_connection.close()
             if process.is_alive():
                 _stop_process(process)
+            with self._lock:
+                self._active_processes.discard(process)
 
         if outcome["status"] == "error":
             raise RawInspectionError(outcome["message"])
@@ -107,6 +144,17 @@ class ProcessInspectionRunner:
         if not isinstance(result, dict):
             raise MediaInspectionError("unknown_error", status_code=502)
         return result
+
+    def shutdown(self) -> None:
+        """Prevent new work and terminate every active inspection process."""
+        with self._lock:
+            self._closed = True
+            active_processes = list(self._active_processes)
+        for process in active_processes:
+            if process.is_alive():
+                _stop_process(process)
+        with self._lock:
+            self._active_processes.clear()
 
 
 class MediaInspectionService:
@@ -119,34 +167,56 @@ class MediaInspectionService:
         runner: InspectionRunner | None = None,
         node_binary: str | None = None,
         timeout_seconds: float = 25,
+        maximum_concurrency: int = 1,
+        thumbnail_checker: NetworkSafetyChecker | None = None,
     ) -> None:
         self._validator = validator
         self._runner = runner or ProcessInspectionRunner()
         self._node_binary = node_binary or _resolve_node_binary()
         self._timeout_seconds = timeout_seconds
+        self._semaphore = asyncio.Semaphore(maximum_concurrency)
+        self._thumbnail_checker = thumbnail_checker or NetworkSafetyChecker()
 
     async def inspect(self, raw_url: str) -> MediaInspectionResponse:
         validated = await self._validator.validate(raw_url)
         if not self._node_binary:
             raise MediaInspectionError("inspection_unavailable", status_code=503)
 
-        try:
-            raw_info = await asyncio.to_thread(
-                self._runner.inspect,
-                validated.canonical_url,
-                self._node_binary,
-                self._timeout_seconds,
-            )
-        except MediaInspectionError:
-            raise
-        except RawInspectionError as error:
-            raise _classify_yt_dlp_error(str(error)) from error
-        except (OSError, RuntimeError) as error:
-            raise MediaInspectionError(
-                "inspection_unavailable", status_code=503
-            ) from error
+        async with self._semaphore:
+            try:
+                raw_info = await asyncio.to_thread(
+                    self._runner.inspect,
+                    validated.canonical_url,
+                    self._node_binary,
+                    self._timeout_seconds,
+                )
+            except MediaInspectionError:
+                raise
+            except RawInspectionError as error:
+                raise _classify_yt_dlp_error(str(error)) from error
+            except (OSError, RuntimeError) as error:
+                raise MediaInspectionError(
+                    "inspection_unavailable", status_code=503
+                ) from error
 
-        return _map_metadata(validated, raw_info)
+        result = _map_metadata(validated, raw_info)
+        await self._validate_thumbnail(result)
+        return result
+
+    async def shutdown(self) -> None:
+        shutdown = getattr(self._runner, "shutdown", None)
+        if shutdown is not None:
+            await asyncio.to_thread(shutdown)
+
+    async def _validate_thumbnail(self, result: MediaInspectionResponse) -> None:
+        if not result.thumbnail_url:
+            return
+        split = urlsplit(result.thumbnail_url)
+        try:
+            port = split.port or (443 if split.scheme == "https" else 80)
+            await self._thumbnail_checker.ensure_public(split.hostname or "", port)
+        except (ValueError, UrlValidationError):
+            result.thumbnail_url = None
 
 
 def _yt_dlp_worker(
@@ -159,7 +229,8 @@ def _yt_dlp_worker(
         with YoutubeDL(options) as downloader:
             result = downloader.extract_info(canonical_url, download=False)
             sanitized = downloader.sanitize_info(result)
-        connection.send({"status": "ok", "result": sanitized})
+            limited = _limit_ipc_metadata(sanitized)
+        connection.send({"status": "ok", "result": limited})
     except Exception as error:  # yt-dlp exposes many extractor/network subclasses
         connection.send({"status": "error", "message": str(error)[:2000]})
     finally:
@@ -207,6 +278,9 @@ def _map_metadata(
         raise MediaInspectionError("playlist_not_supported", status_code=400)
     if raw_info.get("is_live") or raw_info.get("live_status") == "is_live":
         raise MediaInspectionError("media_unavailable", status_code=400)
+    extracted_id = raw_info.get("id")
+    if isinstance(extracted_id, str) and extracted_id != validated.media_id:
+        raise MediaInspectionError("unknown_error", status_code=502)
 
     title = _bounded_text(raw_info.get("title"), 200)
     if not title:
@@ -289,7 +363,11 @@ def _first_text(data: dict[str, Any], *keys: str) -> str | None:
 
 
 def _non_negative_int(value: Any) -> int | None:
-    if not isinstance(value, int | float) or isinstance(value, bool) or value < 0:
+    if (
+        not isinstance(value, int | float)
+        or isinstance(value, bool)
+        or not 0 <= value <= _MAX_DURATION_SECONDS
+    ):
         return None
     return int(value)
 
@@ -297,7 +375,11 @@ def _non_negative_int(value: Any) -> int | None:
 def _published_date(value: Any) -> str | None:
     if not isinstance(value, str) or len(value) != 8 or not value.isdigit():
         return None
-    return f"{value[:4]}-{value[4:6]}-{value[6:]}"
+    try:
+        parsed = datetime.strptime(value, "%Y%m%d").date()
+    except ValueError:
+        return None
+    return parsed.isoformat()
 
 
 def _estimated_size(formats: list[Any]) -> int | None:
@@ -306,7 +388,11 @@ def _estimated_size(formats: list[Any]) -> int | None:
         if not isinstance(item, dict):
             continue
         size = item.get("filesize") or item.get("filesize_approx")
-        if isinstance(size, int | float) and not isinstance(size, bool) and size > 0:
+        if (
+            isinstance(size, int | float)
+            and not isinstance(size, bool)
+            and 0 < size <= _MAX_ESTIMATED_SIZE
+        ):
             sizes.append(int(size))
     return max(sizes, default=None)
 
@@ -338,3 +424,58 @@ def _safe_public_url(value: Any) -> str | None:
     if split.username is not None or split.password is not None:
         return None
     return value
+
+
+def _limit_ipc_metadata(raw_info: Any) -> dict[str, Any]:
+    """Drop secrets and cap data before it crosses the process pipe."""
+    if not isinstance(raw_info, dict):
+        return {}
+    allowed_scalar_fields = {
+        "id",
+        "_type",
+        "title",
+        "uploader",
+        "channel",
+        "creator",
+        "duration",
+        "thumbnail",
+        "upload_date",
+        "is_live",
+        "live_status",
+    }
+    limited = {
+        key: _limit_scalar(value)
+        for key, value in raw_info.items()
+        if key in allowed_scalar_fields
+    }
+    if raw_info.get("entries"):
+        limited["entries"] = True
+
+    formats = raw_info.get("formats")
+    if isinstance(formats, list):
+        allowed_format_fields = {
+            "width",
+            "height",
+            "vcodec",
+            "acodec",
+            "filesize",
+            "filesize_approx",
+        }
+        limited["formats"] = [
+            {
+                key: _limit_scalar(value)
+                for key, value in item.items()
+                if key in allowed_format_fields
+            }
+            for item in formats[:500]
+            if isinstance(item, dict)
+        ]
+    return limited
+
+
+def _limit_scalar(value: Any) -> Any:
+    if isinstance(value, str):
+        return value[:2048]
+    if isinstance(value, bool | int | float) or value is None:
+        return value
+    return None

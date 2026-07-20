@@ -6,8 +6,9 @@ La fase 0 de definición está cerrada. Consulta [`docs/phase-0.md`](docs/phase-
 y [`docs/acceptance-criteria.md`](docs/acceptance-criteria.md) antes de comenzar la
 implementación.
 
-La fase 1 está en curso. El backend mínimo y `GET /health` ya están disponibles;
-consulta [`docs/phase-1.md`](docs/phase-1.md) para ver el estado de implementación.
+La fase 1 está completada: el backend valida y analiza URLs autorizadas de
+YouTube y TikTok sin descargar contenido. Consulta
+[`docs/phase-1.md`](docs/phase-1.md) para ver contratos y evidencias.
 
 ## Estructura
 

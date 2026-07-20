@@ -36,7 +36,10 @@ def create_app(
         application.state.system_diagnostics = runtime_diagnostics.inspect()
         application.state.media_url_validator = runtime_media_url_validator
         application.state.media_inspection_service = runtime_media_inspection
-        yield
+        try:
+            yield
+        finally:
+            await runtime_media_inspection.shutdown()
 
     application = FastAPI(
         title=runtime_settings.app_name,

@@ -229,8 +229,8 @@ en el contrato público.
 
 ### Evidencia de la entrega
 
-- Pruebas totales del backend: 60 aprobadas.
-- Casos específicos de inspección: 20 aprobados.
+- Pruebas totales del backend: 67 aprobadas.
+- Casos específicos de inspección: 27 aprobados.
 - Ruff lint y formato: aprobados.
 - La configuración prueba `download=False`, `skip_download`, `simulate` y
   `noplaylist`.
@@ -248,15 +248,22 @@ en el contrato público.
 Las pruebas reales positivas de YouTube y TikTok quedan en `PASS` con URLs
 activas proporcionadas por el usuario.
 
-## 1.5 Siguiente entrega — Inspección real autorizada y endurecimiento
+## 1.5 Inspección real autorizada y endurecimiento
 
 - [x] Proporcionar una URL activa y autorizada de YouTube.
 - [x] Proporcionar una URL activa y autorizada de TikTok.
 - [x] Verificar metadatos y resoluciones reales de TikTok.
 - [x] Confirmar mediante el sistema de archivos que YouTube no crea contenido.
 - [x] Confirmar mediante el sistema de archivos que TikTok no crea contenido.
-- [ ] Ejecutar una prueba de timeout real controlada.
-- [ ] Revisar redacción de logs y límites de metadatos con respuestas reales.
+- [x] Ejecutar una prueba de timeout real controlada.
+- [x] Limitar la inspección a una ejecución simultánea.
+- [x] Terminar procesos activos durante el apagado de FastAPI.
+- [x] Limitar metadatos antes de atravesar el pipe del proceso.
+- [x] Eliminar URLs multimedia, cookies, cabeceras y campos desconocidos del IPC.
+- [x] Validar que el destino DNS/IP de una miniatura sea público.
+- [x] Limitar duración, tamaño, fechas, texto y número de formatos.
+- [x] Rechazar un ID del extractor distinto del ID validado.
+- [x] Revisar redacción de logs y límites con respuestas reales.
 
 ### Evidencia real de TikTok
 
@@ -270,6 +277,24 @@ activas proporcionadas por el usuario.
 - No se crearon vídeos, audios, `.part` ni `.ytdl`.
 - Los logs solo mostraron la solicitud saneada y su código HTTP.
 
+### Evidencia de endurecimiento
+
+- Un proceso bloqueado fue terminado tras un timeout de prueba y el registro de
+  procesos activos volvió a cero.
+- Dos inspecciones simultáneas se serializaron; el máximo observado fue una.
+- El ciclo de vida de FastAPI invoca `shutdown` del servicio de inspección.
+- Los metadatos se reducen a campos permitidos y 500 formatos como máximo antes
+  de enviarse por el pipe.
+- Pruebas con tokens, cookies, cabeceras y URLs firmadas de medios confirmaron que
+  no atraviesan el IPC ni aparecen en la respuesta pública.
+- Una miniatura que resolvía a loopback fue descartada.
+- YouTube y TikTok volvieron a responder HTTP 200 con el endurecimiento activo.
+- `/health` mantuvo su contrato y el diagnóstico devolvió `ready: true`.
+- No aparecieron archivos multimedia ni temporales tras las inspecciones finales.
+
 ## Puerta de salida de la fase 1
 
-La fase termina cuando una URL autorizada de YouTube o TikTok puede validarse y analizarse sin descargar el archivo, y el resultado cumple los contratos funcionales y de seguridad de la fase 0.
+La fase 1 queda completada: URLs autorizadas de YouTube y TikTok se validan y
+analizan sin descargar archivos, con aislamiento, límites, cierre controlado y
+contratos estables. La siguiente fase puede comenzar con el modelo de tarea y el
+núcleo de descarga controlada.
