@@ -17,6 +17,8 @@ class DownloadRepository(Protocol):
 
     async def save(self, task: DownloadTask) -> DownloadTask: ...
 
+    async def update_progress(self, task: DownloadTask) -> None: ...
+
     async def claim_next_queued(self) -> DownloadTask | None: ...
 
     async def interrupt_active(self) -> int: ...
@@ -56,6 +58,9 @@ class InMemoryDownloadRepository:
                 raise KeyError(task.id)
             self._tasks[task.id] = deepcopy(task)
             return deepcopy(task)
+
+    async def update_progress(self, task: DownloadTask) -> None:
+        await self.save(task)
 
     async def claim_next_queued(self) -> DownloadTask | None:
         """Atomically select and start the oldest queued task."""

@@ -13,6 +13,8 @@ from app.api.downloads import router as downloads_router
 from app.api.health import router as health_router
 from app.api.media import router as media_router
 from app.config import Settings
+from app.database.migrations import upgrade_database
+from app.database.repository import SqliteDownloadRepository, create_sqlite_engine
 from app.downloader.executor import SimulatedDownloadExecutor
 from app.downloader.paths import DownloadPathPolicy
 from app.downloader.repository import InMemoryDownloadRepository
@@ -41,7 +43,13 @@ def create_app(
     )
     runtime_worker = download_worker
     if download_task_service is None:
-        repository = InMemoryDownloadRepository()
+        if runtime_settings.environment == "test":
+            repository = InMemoryDownloadRepository()
+        else:
+            upgrade_database(runtime_settings.database_path)
+            repository = SqliteDownloadRepository(
+                create_sqlite_engine(runtime_settings.database_path)
+            )
         if runtime_worker is None:
             executor = SimulatedDownloadExecutor()
             if runtime_settings.download_executor == "real":

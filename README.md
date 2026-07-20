@@ -44,3 +44,12 @@ VD_DOWNLOAD_EXECUTOR=real uv run uvicorn app.main:app \
 Los archivos terminados se guardan en `downloads/` y cada ejecución usa un
 subdirectorio aislado en `downloads/.temporary/`. Se pueden cambiar mediante
 `VD_DOWNLOAD_OUTPUT_ROOT` y `VD_DOWNLOAD_TEMPORARY_ROOT`.
+
+Las tareas y sus intentos se conservan en SQLite, por defecto en
+`data/video-downloader.sqlite3`. Al arrancar, Alembic aplica automáticamente las
+migraciones pendientes. La ruta puede cambiarse con `VD_DATABASE_PATH` y las
+migraciones también pueden ejecutarse manualmente desde `backend/`:
+
+```bash
+uv run alembic upgrade head
+```

@@ -75,7 +75,7 @@ class DownloadWorker:
 
         async def update_progress(progress: DownloadProgress) -> None:
             task.current_attempt.update_progress(progress)
-            await self._repository.save(task)
+            await self._repository.update_progress(task)
 
         async def begin_processing() -> None:
             task.current_attempt.transition_to(DownloadStatus.PROCESSING)

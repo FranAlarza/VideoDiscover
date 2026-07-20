@@ -23,6 +23,7 @@ class Settings:
     download_executor: DownloadExecutorMode = "simulated"
     download_output_root: Path = _PROJECT_ROOT / "downloads"
     download_temporary_root: Path = _PROJECT_ROOT / "downloads" / ".temporary"
+    database_path: Path = _PROJECT_ROOT / "data" / "video-downloader.sqlite3"
 
     @property
     def docs_enabled(self) -> bool:
@@ -52,6 +53,12 @@ class Settings:
                 os.getenv(
                     "VD_DOWNLOAD_TEMPORARY_ROOT",
                     str(_PROJECT_ROOT / "downloads" / ".temporary"),
+                )
+            ),
+            database_path=Path(
+                os.getenv(
+                    "VD_DATABASE_PATH",
+                    str(_PROJECT_ROOT / "data" / "video-downloader.sqlite3"),
                 )
             ),
         )

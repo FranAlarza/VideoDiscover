@@ -175,3 +175,47 @@ Los valores predeterminados de desarrollo son `simulated`, `downloads/` y
 La fase termina cuando vídeo y audio pueden descargarse de forma controlada a un
 directorio temporal, procesarse con FFmpeg, moverse a una ruta final segura y
 cancelarse sin dejar procesos ni archivos parciales.
+
+## 2.4 Persistencia SQLite y recuperación
+
+Estado de implementación: completado y reinicio real verificado.
+
+- [x] Fijar SQLAlchemy 2 y Alembic en el proyecto y el lockfile.
+- [x] Crear tablas normalizadas `downloads` y `download_attempts`.
+- [x] Añadir índices para creación, estado y número de intento.
+- [x] Activar claves foráneas y WAL en conexiones de aplicación.
+- [x] Crear una migración inicial reproducible sobre una base vacía.
+- [x] Aplicar migraciones automáticamente al arrancar.
+- [x] Implementar el contrato completo con `SqliteDownloadRepository`.
+- [x] Reclamar FIFO mediante `BEGIN IMMEDIATE` para impedir duplicados.
+- [x] Mantener el progreso frecuente en memoria sin escribir cada fragmento.
+- [x] Persistir estados, errores, resultados y progreso terminal.
+- [x] Convertir tareas activas anteriores a `interrupted` al arrancar.
+- [x] Recuperar y continuar tareas `queued` conservando el orden.
+- [x] Mantener el repositorio en memoria para pruebas aisladas.
+
+### Configuración y migraciones
+
+```text
+VD_DATABASE_PATH=/ruta/video-downloader.sqlite3
+```
+
+El valor de desarrollo es `data/video-downloader.sqlite3`. Desde `backend/` se
+puede ejecutar `uv run alembic upgrade head`; el arranque normal realiza la misma
+actualización programáticamente.
+
+### Evidencia automatizada
+
+- Migración inicial verificada sobre una base vacía.
+- Tarea completada reconstruida con selección, progreso y resultado.
+- Reclamación FIFO única verificada con llamadas concurrentes.
+- Progreso visible en vivo y ausente tras crear otro repositorio sin transición.
+- Reinicio simulado: activa a `interrupted`, pendiente conservada y reclamada.
+- Suite completa: 112 pruebas aprobadas; Ruff lint y formato aprobados.
+
+### Evidencia manual — 20 de julio de 2026
+
+- Se creó una tarea con ejecutor simulado y base SQLite separada.
+- Tras detener y volver a iniciar Uvicorn con la misma base, `GET /api/downloads/{id}`
+  devolvió el mismo UUID, selección, fechas, progreso, resultado e intento.
+- El estado terminal permaneció en `completed` y no se creó otro intento.
