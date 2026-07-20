@@ -24,6 +24,22 @@ entorno React, TypeScript y Vite operativo; consulta
 
 ## Backend
 
+Para levantar backend y frontend juntos en desarrollo:
+
+```bash
+./scripts/dev.sh
+```
+
+La interfaz queda disponible en `http://127.0.0.1:5173`. El script también
+arranca la API en `http://127.0.0.1:8000` y detiene ambos procesos con `Ctrl+C`.
+Si alguno de los puertos ya está ocupado por una ejecución anterior:
+
+```bash
+./scripts/dev.sh --restart
+```
+
+Para arrancar solo el backend:
+
 ```bash
 cd backend
 uv sync

@@ -11,6 +11,7 @@ coverage/
 
 # Environment and local data
 .env
+data/
 *.db
 *.sqlite
 *.sqlite3

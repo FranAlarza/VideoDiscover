@@ -369,6 +369,11 @@ def test_inspection_preserves_real_timeout_error() -> None:
         ("Video unavailable: removed", "media_unavailable", 404),
         ("Not available in your country", "region_restricted", 400),
         ("This video is age-restricted", "age_restricted", 400),
+        (
+            "This post may not be comfortable for some audiences. Log in for access.",
+            "age_restricted",
+            400,
+        ),
         ("DRM protected content", "drm_protected", 400),
         ("Playlist result", "playlist_not_supported", 400),
         ("HTTP Error 429: Too Many Requests", "temporarily_blocked", 429),

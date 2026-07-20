@@ -335,7 +335,12 @@ def _classify_yt_dlp_error(message: str) -> MediaInspectionError:
         ),
         (("not available", "video unavailable", "removed"), "media_unavailable", 404),
         (
-            ("age-restricted", "age restricted", "confirm your age"),
+            (
+                "age-restricted",
+                "age restricted",
+                "confirm your age",
+                "not be comfortable for some audiences",
+            ),
             "age_restricted",
             400,
         ),
