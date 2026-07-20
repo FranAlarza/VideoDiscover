@@ -137,3 +137,15 @@ Estado: implementado y verificado manualmente.
 - [x] Mantener carga y errores independientes por tarjeta.
 - [x] Cubrir repositorios, servicio, API, eventos y frontend con pruebas.
 - [x] Verificar manualmente que la tarjeta desaparece y el archivo permanece.
+
+## 3.9 Metadatos y progreso detallado
+
+Estado: implementado y verificado manualmente.
+
+- [x] Mostrar fecha de publicación y tamaño estimado cuando estén disponibles.
+- [x] Ofrecer explícitamente **Mejor disponible** y enviar la mayor calidad analizada.
+- [x] Mostrar bytes transferidos, tamaño total, velocidad y tiempo restante.
+- [x] Representar el procesamiento sin porcentaje como progreso indeterminado.
+- [x] Ocultar cualquier dato desconocido en lugar de inventar un valor.
+- [x] Cubrir metadatos opcionales, selección y progreso con pruebas.
+- [x] Verificar los datos disponibles durante una descarga real.

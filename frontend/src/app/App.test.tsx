@@ -97,8 +97,8 @@ describe("App", () => {
             author: "Canal demo",
             duration_seconds: 125,
             thumbnail_url: "https://example.com/thumb.jpg",
-            published_at: null,
-            estimated_size: null,
+            published_at: "2026-07-20",
+            estimated_size: 10_500_000,
             video_qualities: [360, 720],
             audio_available: true,
             is_live: false,
@@ -125,7 +125,10 @@ describe("App", () => {
     expect(screen.getByText("2:05")).toBeVisible();
     expect(screen.getByRole("button", { name: "Video" })).toHaveClass("is-selected");
     expect(screen.getByRole("button", { name: "Audio" })).toBeEnabled();
-    expect(screen.getByLabelText("Calidad")).toHaveValue("720");
+    expect(screen.getByText(/20 jul 2026/i)).toBeVisible();
+    expect(screen.getByText("Tamaño estimado: 10,5 MB")).toBeVisible();
+    expect(screen.getByLabelText("Calidad")).toHaveValue("best");
+    expect(screen.getByRole("option", { name: "Mejor disponible (720p)" })).toBeVisible();
   });
 
   it("shows a local validation error for an empty URL", async () => {
@@ -255,8 +258,8 @@ describe("App", () => {
             percentage: 100,
             downloaded_bytes: 1000000,
             total_bytes: 1000000,
-            speed_bytes_per_second: null,
-            eta_seconds: null,
+            speed_bytes_per_second: 250000,
+            eta_seconds: 65,
           },
           result: {
             filename: "Demo descargable.mp4",
@@ -270,6 +273,9 @@ describe("App", () => {
 
     expect(await screen.findByText("Completada")).toBeVisible();
     expect(screen.getByText("100%")).toBeVisible();
+    expect(screen.getByText("1 MB de 1 MB")).toBeVisible();
+    expect(screen.getByText("250 kB/s")).toBeVisible();
+    expect(screen.getByText("1 min 5 s")).toBeVisible();
     expect(screen.getByText("Demo descargable.mp4")).toBeVisible();
   });
 
@@ -315,6 +321,42 @@ describe("App", () => {
     expect(screen.getByText("100%")).toBeVisible();
     expect(screen.getByText(/AL BORDE del INFARTO/)).toBeVisible();
     expect(screen.getByLabelText("Progreso de Demo descargable")).toHaveValue(100);
+  });
+
+  it("shows indeterminate progress while processing without a percentage", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("video-downloader.usage-notice-version", "2026-07-20");
+    vi.stubGlobal("fetch", createDownloadFlowMock());
+
+    render(<App />);
+    await inspectDemo(user);
+    await user.click(screen.getByRole("button", { name: "Descargar" }));
+    await screen.findByText("En cola");
+
+    FakeEventSource.instances[0]?.emit("download.updated", {
+      occurred_at: "2026-07-20T16:37:43Z",
+      task: {
+        ...downloadTask,
+        status: "processing",
+        queue_position: null,
+        current_attempt: {
+          ...downloadTask.current_attempt,
+          status: "processing",
+          progress: {
+            percentage: null,
+            downloaded_bytes: null,
+            total_bytes: null,
+            speed_bytes_per_second: null,
+            eta_seconds: null,
+          },
+        },
+      },
+    });
+
+    expect(await screen.findByText("Procesando archivo")).toBeVisible();
+    expect(screen.getByLabelText("Procesando Demo descargable")).not.toHaveAttribute(
+      "value",
+    );
   });
 
   it("creates an audio download with the selected bitrate", async () => {

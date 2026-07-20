@@ -32,6 +32,7 @@ type InspectState =
 
 type OutputMode = "video" | "audio";
 type FileAction = "open" | "reveal";
+type QualitySelection = "best" | number | null;
 
 type DownloadCreationState =
   | { status: "idle"; error: null }
@@ -53,7 +54,7 @@ export function App() {
   const backendStatus = useBackendHealth();
   const [url, setUrl] = useState("");
   const [outputMode, setOutputMode] = useState<OutputMode>("video");
-  const [selectedQuality, setSelectedQuality] = useState<number | null>(null);
+  const [selectedQuality, setSelectedQuality] = useState<QualitySelection>(null);
   const [audioBitrate, setAudioBitrate] = useState(192);
   const [showUsageNotice, setShowUsageNotice] = useState(false);
   const [usageNoticeAccepted, setUsageNoticeAccepted] = useState(
@@ -164,7 +165,7 @@ export function App() {
     try {
       const media = await inspectMedia(trimmedUrl);
       const sortedQualities = sortQualities(media.video_qualities);
-      setSelectedQuality(sortedQualities[0] ?? null);
+      setSelectedQuality(sortedQualities.length > 0 ? "best" : null);
       setOutputMode(media.video_qualities.length > 0 ? "video" : "audio");
       setInspectState({ status: "success", media, error: null });
     } catch (error) {
@@ -193,7 +194,12 @@ export function App() {
       const task = await createDownload({
         url: url.trim(),
         output_type: outputMode,
-        video_quality: outputMode === "video" ? selectedQuality : null,
+        video_quality:
+          outputMode === "video"
+            ? selectedQuality === "best"
+              ? (qualityOptions[0] ?? null)
+              : selectedQuality
+            : null,
         audio_bitrate: outputMode === "audio" ? audioBitrate : null,
       });
       setDownloadHistory((current) => ({
@@ -428,6 +434,14 @@ export function App() {
                 {inspectState.media.duration_seconds !== null ? (
                   <span>{formatDuration(inspectState.media.duration_seconds)}</span>
                 ) : null}
+                {inspectState.media.published_at ? (
+                  <span>{formatPublishedDate(inspectState.media.published_at)}</span>
+                ) : null}
+                {inspectState.media.estimated_size !== null ? (
+                  <span>
+                    Tamaño estimado: {formatBytes(inspectState.media.estimated_size)}
+                  </span>
+                ) : null}
                 {inspectState.media.is_live ? <span>Directo</span> : null}
               </div>
               <h2 id="media-title">{inspectState.media.title}</h2>
@@ -455,13 +469,20 @@ export function App() {
               </div>
 
               {outputMode === "video" && canChooseVideo ? (
-                <label className="field field--compact" htmlFor="quality">
+                <label className="field field--compact field--quality" htmlFor="quality">
                   <span>Calidad</span>
                   <select
                     id="quality"
                     value={selectedQuality ?? ""}
-                    onChange={(event) => setSelectedQuality(Number(event.target.value))}
+                    onChange={(event) =>
+                      setSelectedQuality(
+                        event.target.value === "best"
+                          ? "best"
+                          : Number(event.target.value),
+                      )
+                    }
                   >
+                    <option value="best">Mejor disponible ({qualityOptions[0]}p)</option>
                     {qualityOptions.map((quality) => (
                       <option key={quality} value={quality}>
                         {quality}p
@@ -702,6 +723,24 @@ function DownloadCard({
             <dd>{formatPercentage(progress)}</dd>
           </div>
         ) : null}
+        {task.current_attempt.progress.downloaded_bytes !== null ? (
+          <div>
+            <dt>Transferido</dt>
+            <dd>{formatTransferredBytes(task)}</dd>
+          </div>
+        ) : null}
+        {task.current_attempt.progress.speed_bytes_per_second !== null ? (
+          <div>
+            <dt>Velocidad</dt>
+            <dd>{formatBytes(task.current_attempt.progress.speed_bytes_per_second)}/s</dd>
+          </div>
+        ) : null}
+        {task.current_attempt.progress.eta_seconds !== null ? (
+          <div>
+            <dt>Tiempo restante</dt>
+            <dd>{formatEta(task.current_attempt.progress.eta_seconds)}</dd>
+          </div>
+        ) : null}
       </dl>
       {task.current_attempt.result ? (
         <div className="download-card__file">
@@ -709,12 +748,16 @@ function DownloadCard({
           <p>{task.current_attempt.result.filename}</p>
         </div>
       ) : null}
-      {progress !== null ? (
+      {progress !== null || task.status === "processing" ? (
         <progress
           className="download-progress"
           max={100}
-          value={progress}
-          aria-label={`Progreso de ${task.title}`}
+          {...(progress !== null ? { value: progress } : {})}
+          aria-label={
+            task.status === "processing" && progress === null
+              ? `Procesando ${task.title}`
+              : `Progreso de ${task.title}`
+          }
         />
       ) : null}
       {task.current_attempt.failure ? (
@@ -911,6 +954,43 @@ function formatCreatedAt(value: string): string {
     dateStyle: "short",
     timeStyle: "short",
   }).format(date);
+}
+
+function formatPublishedDate(value: string): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return "Fecha desconocida";
+  return new Intl.DateTimeFormat("es-ES", {
+    dateStyle: "medium",
+    timeZone: "UTC",
+  }).format(date);
+}
+
+function formatBytes(value: number): string {
+  if (value < 1_000) return `${Math.round(value)} B`;
+  const units = ["kB", "MB", "GB", "TB"];
+  let amount = value;
+  let unitIndex = -1;
+  do {
+    amount /= 1_000;
+    unitIndex += 1;
+  } while (amount >= 1_000 && unitIndex < units.length - 1);
+  return `${new Intl.NumberFormat("es-ES", { maximumFractionDigits: 1 }).format(amount)} ${units[unitIndex]}`;
+}
+
+function formatTransferredBytes(task: DownloadTask): string {
+  const { downloaded_bytes: downloaded, total_bytes: total } =
+    task.current_attempt.progress;
+  if (downloaded === null) return "";
+  return total === null
+    ? formatBytes(downloaded)
+    : `${formatBytes(downloaded)} de ${formatBytes(total)}`;
+}
+
+function formatEta(totalSeconds: number): string {
+  if (totalSeconds < 60) return `${Math.round(totalSeconds)} s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.round(totalSeconds % 60);
+  return seconds === 0 ? `${minutes} min` : `${minutes} min ${seconds} s`;
 }
 
 function readAcceptedUsageNotice(): string | null {
