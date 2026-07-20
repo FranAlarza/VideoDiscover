@@ -525,6 +525,100 @@ describe("App", () => {
     ).toBeVisible();
     expect(screen.getByLabelText("URL del video")).toBeEnabled();
   });
+
+  it("retries a failed download in the same history entry", async () => {
+    const user = userEvent.setup();
+    const failedTask = createFailedDownloadTask();
+    const retriedTask = {
+      ...failedTask,
+      status: "queued",
+      queue_position: 1,
+      attempts: [failedTask.current_attempt],
+      current_attempt: {
+        ...downloadTask.current_attempt,
+        number: 2,
+        created_at: "2026-07-20T17:00:00Z",
+      },
+    };
+    const fetchMock = createHistoryMock([failedTask], undefined, (input) => {
+      if (requestUrl(input).endsWith(`/${downloadTask.id}/retry`)) {
+        return Promise.resolve(
+          new Response(JSON.stringify(retriedTask), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return null;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Reintentar" }));
+
+    expect(await screen.findByText("En cola")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Cancelar descarga" })).toBeEnabled();
+    expect(screen.getAllByRole("heading", { level: 3 })).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledWith(`/api/downloads/${downloadTask.id}/retry`, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      signal: undefined,
+    });
+  });
+
+  it("prevents duplicate retry requests while retry is pending", async () => {
+    const user = userEvent.setup();
+    const failedTask = createFailedDownloadTask();
+    const pendingRetry = new Promise<Response>(() => undefined);
+    const fetchMock = createHistoryMock([failedTask], undefined, (input) =>
+      requestUrl(input).endsWith(`/${downloadTask.id}/retry`) ? pendingRetry : null,
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Reintentar" }));
+
+    const retryingButton = screen.getByRole("button", { name: "Reintentando…" });
+    expect(retryingButton).toBeDisabled();
+    await user.click(retryingButton);
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        requestUrl(input).endsWith(`/${downloadTask.id}/retry`),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("shows retry errors on the affected card and enables retry again", async () => {
+    const user = userEvent.setup();
+    const failedTask = createFailedDownloadTask();
+    const fetchMock = createHistoryMock([failedTask], undefined, (input) => {
+      if (requestUrl(input).endsWith(`/${downloadTask.id}/retry`)) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              error: {
+                code: "format_unavailable",
+                message: "La calidad seleccionada ya no está disponible.",
+              },
+            }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      return null;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await user.click(await screen.findByRole("button", { name: "Reintentar" }));
+
+    expect(
+      await screen.findByText("La calidad seleccionada ya no está disponible."),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeEnabled();
+    expect(screen.getByText("Fallida")).toBeVisible();
+  });
 });
 
 class FakeEventSource extends EventTarget {
@@ -630,7 +724,11 @@ function createDownloadFlowMock(
   });
 }
 
-function createHistoryMock(tasks: unknown[], error?: { status: number; body: unknown }) {
+function createHistoryMock(
+  tasks: unknown[],
+  error?: { status: number; body: unknown },
+  handleAction?: (input: RequestInfo | URL) => Promise<Response> | null,
+) {
   return vi.fn<typeof fetch>((input) => {
     if (input === "/health") {
       return Promise.resolve(
@@ -648,8 +746,24 @@ function createHistoryMock(tasks: unknown[], error?: { status: number; body: unk
         }),
       );
     }
+    const actionResponse = handleAction?.(input);
+    if (actionResponse) return actionResponse;
     return Promise.reject(new Error(`Unexpected request: ${requestUrl(input)}`));
   });
+}
+
+function createFailedDownloadTask() {
+  return {
+    ...downloadTask,
+    status: "failed",
+    queue_position: null,
+    current_attempt: {
+      ...downloadTask.current_attempt,
+      status: "failed",
+      finished_at: "2026-07-20T16:50:00Z",
+      failure: { code: "network_error", message: "La conexión se interrumpió." },
+    },
+  };
 }
 
 const downloadTask = {

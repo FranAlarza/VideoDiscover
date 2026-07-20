@@ -9,6 +9,7 @@ import {
   createDownload,
   DownloadApiError,
   getDownloads,
+  retryDownload,
   type DownloadTask,
 } from "@/api/downloads";
 import { inspectMedia, MediaApiError, type MediaInspection } from "@/api/media";
@@ -66,6 +67,8 @@ export function App() {
   });
   const [cancellingTaskIds, setCancellingTaskIds] = useState<string[]>([]);
   const [cancelErrors, setCancelErrors] = useState<Record<string, string>>({});
+  const [retryingTaskIds, setRetryingTaskIds] = useState<string[]>([]);
+  const [retryErrors, setRetryErrors] = useState<Record<string, string>>({});
   const [downloadEventsStatus, setDownloadEventsStatus] =
     useState<DownloadEventConnectionStatus>("connecting");
   const [inspectState, setInspectState] = useState<InspectState>({
@@ -220,6 +223,37 @@ export function App() {
           : "No se ha podido conectar con el backend.";
       setCancelErrors((current) => ({ ...current, [taskId]: message }));
       setCancellingTaskIds((current) =>
+        current.filter((candidate) => candidate !== taskId),
+      );
+    }
+  }
+
+  async function handleRetryDownload(downloadTask: DownloadTask) {
+    if (retryingTaskIds.includes(downloadTask.id) || !isRetryableDownload(downloadTask)) {
+      return;
+    }
+
+    const taskId = downloadTask.id;
+    setRetryingTaskIds((current) => [...current, taskId]);
+    setRetryErrors((current) => omitRecordKey(current, taskId));
+
+    try {
+      const task = await retryDownload(taskId);
+      setDownloadHistory((current) => ({
+        status: "ready",
+        tasks: upsertDownloadTask(current.tasks, task),
+        error: null,
+      }));
+      setRetryingTaskIds((current) =>
+        current.filter((candidate) => candidate !== taskId),
+      );
+    } catch (error) {
+      const message =
+        error instanceof DownloadApiError
+          ? error.message
+          : "No se ha podido conectar con el backend.";
+      setRetryErrors((current) => ({ ...current, [taskId]: message }));
+      setRetryingTaskIds((current) =>
         current.filter((candidate) => candidate !== taskId),
       );
     }
@@ -440,7 +474,10 @@ export function App() {
                   eventsDisconnected={downloadEventsStatus === "disconnected"}
                   isCancelling={cancellingTaskIds.includes(task.id)}
                   cancelError={cancelErrors[task.id] ?? null}
+                  isRetrying={retryingTaskIds.includes(task.id)}
+                  retryError={retryErrors[task.id] ?? null}
                   onCancel={handleCancelDownload}
+                  onRetry={handleRetryDownload}
                 />
               ))}
             </div>
@@ -493,7 +530,10 @@ interface DownloadCardProps {
   eventsDisconnected: boolean;
   isCancelling: boolean;
   cancelError: string | null;
+  isRetrying: boolean;
+  retryError: string | null;
   onCancel: (task: DownloadTask) => Promise<void>;
+  onRetry: (task: DownloadTask) => Promise<void>;
 }
 
 function DownloadCard({
@@ -501,7 +541,10 @@ function DownloadCard({
   eventsDisconnected,
   isCancelling,
   cancelError,
+  isRetrying,
+  retryError,
   onCancel,
+  onRetry,
 }: DownloadCardProps) {
   const titleId = `download-title-${task.id}`;
   const progress = visibleProgress(task);
@@ -561,6 +604,11 @@ function DownloadCard({
           {cancelError}
         </p>
       ) : null}
+      {retryError ? (
+        <p className="download-card__message download-card__message--error" role="alert">
+          {retryError}
+        </p>
+      ) : null}
       {eventsDisconnected && isActiveDownload(task) ? (
         <p className="download-card__message">
           Reconectando con el backend para actualizar el progreso...
@@ -577,6 +625,20 @@ function DownloadCard({
             }}
           >
             {isCancelling ? "Cancelando…" : "Cancelar descarga"}
+          </button>
+        </div>
+      ) : null}
+      {isRetryableDownload(task) ? (
+        <div className="download-card__actions">
+          <button
+            className="secondary-button"
+            type="button"
+            disabled={isRetrying}
+            onClick={() => {
+              void onRetry(task);
+            }}
+          >
+            {isRetrying ? "Reintentando…" : "Reintentar"}
           </button>
         </div>
       ) : null}
@@ -619,6 +681,10 @@ function visibleProgress(task: DownloadTask): number | null {
 
 function isActiveDownload(task: DownloadTask): boolean {
   return ["queued", "downloading", "processing"].includes(task.status);
+}
+
+function isRetryableDownload(task: DownloadTask): boolean {
+  return task.status === "failed" || task.status === "interrupted";
 }
 
 function upsertDownloadTask(

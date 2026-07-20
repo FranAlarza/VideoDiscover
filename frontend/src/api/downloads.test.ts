@@ -4,6 +4,7 @@ import {
   cancelDownload,
   createDownload,
   DownloadApiError,
+  retryDownload,
   type DownloadCreateRequest,
 } from "@/api/downloads";
 
@@ -140,6 +141,56 @@ describe("cancelDownload", () => {
     await expect(cancelDownload(task.id)).rejects.toMatchObject({
       name: "DownloadApiError",
       code: "cancellation_not_allowed",
+      status: 409,
+    } satisfies Partial<DownloadApiError>);
+  });
+});
+
+describe("retryDownload", () => {
+  it("posts to the task retry endpoint", async () => {
+    const retriedTask = {
+      ...task,
+      current_attempt: { ...task.current_attempt, number: 2 },
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(retriedTask), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(retryDownload(task.id)).resolves.toMatchObject({
+      id: task.id,
+      status: "queued",
+      current_attempt: { number: 2 },
+    });
+    expect(fetchMock).toHaveBeenCalledWith(`/api/downloads/${task.id}/retry`, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      signal: undefined,
+    });
+  });
+
+  it("preserves stable retry errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "retry_not_allowed",
+              message: "Solo se pueden reintentar descargas fallidas o interrumpidas.",
+            },
+          }),
+          { status: 409, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+
+    await expect(retryDownload(task.id)).rejects.toMatchObject({
+      name: "DownloadApiError",
+      code: "retry_not_allowed",
       status: 409,
     } satisfies Partial<DownloadApiError>);
   });

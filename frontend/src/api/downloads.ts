@@ -141,6 +141,30 @@ export async function cancelDownload(
   return payload;
 }
 
+export async function retryDownload(
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<DownloadTask> {
+  const response = await fetch(`/api/downloads/${encodeURIComponent(taskId)}/retry`, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    signal,
+  });
+  const payload: unknown = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw toDownloadApiError(payload, response.status);
+  }
+  if (!isDownloadTask(payload)) {
+    throw new DownloadApiError(
+      "La respuesta del backend no tiene el formato esperado.",
+      "invalid_response",
+      response.status,
+    );
+  }
+  return payload;
+}
+
 function toDownloadApiError(payload: unknown, status: number): DownloadApiError {
   if (isRecord(payload) && isRecord(payload.error)) {
     const { code, message } = payload.error;

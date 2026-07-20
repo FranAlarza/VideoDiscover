@@ -99,3 +99,16 @@ Estado: implementado y verificado manualmente.
 - [x] Adaptar la lista a títulos, nombres de archivo y pantallas estrechas.
 - [x] Cubrir carga inicial, sincronización y acciones por tarea con pruebas.
 - [x] Verificar persistencia, actualización y cancelación con varias descargas reales.
+
+## 3.6 Reintentos manuales
+
+Estado: implementado y verificado manualmente.
+
+- [x] Consumir el contrato estable de `POST /api/downloads/{id}/retry`.
+- [x] Mostrar **Reintentar** únicamente para descargas fallidas o interrumpidas.
+- [x] Bloquear solicitudes duplicadas mientras se vuelve a analizar el contenido.
+- [x] Reflejar el nuevo intento en la misma entrada y continuar mediante SSE.
+- [x] Mantener errores y estados de reintento independientes por tarjeta.
+- [x] Conservar la cancelación cuando la tarea vuelve a estar activa o en cola.
+- [x] Cubrir el cliente HTTP y la interacción con pruebas automatizadas.
+- [x] Verificar manualmente un reintento real hasta completarse.
