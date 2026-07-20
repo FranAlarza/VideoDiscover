@@ -75,8 +75,14 @@ Estado: implementado; pendiente de prueba manual real tras conectar el entorno.
 - [x] Arrancar `./scripts/dev.sh` con ejecutor real por defecto.
 - [ ] Verificar una descarga real iniciada íntegramente desde la interfaz.
 
-## 3.4 Siguiente entrega — Controles de descarga
+## 3.4 Controles de descarga
 
-La siguiente tarea añadirá acciones sobre descargas desde la interfaz,
-empezando por cancelar una tarea activa o en cola y reflejar el resultado en la
-misma tarjeta.
+Estado: implementado y verificado manualmente con una descarga real.
+
+- [x] Cancelar tareas en cola, en descarga o en procesamiento desde la interfaz.
+- [x] Deshabilitar la acción mientras la cancelación está en curso.
+- [x] Reflejar inmediatamente la respuesta y sincronizar el estado final mediante SSE.
+- [x] Ocultar la acción en estados terminales.
+- [x] Mostrar los errores estables del backend sin perder la tarjeta actual.
+- [x] Cubrir el cliente HTTP y la interacción principal con pruebas automatizadas.
+- [x] Verificar una cancelación real y la limpieza de temporales.

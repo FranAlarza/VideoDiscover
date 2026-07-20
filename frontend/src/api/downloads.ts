@@ -117,6 +117,30 @@ export async function getDownloads(signal?: AbortSignal): Promise<DownloadTask[]
   return payload.items;
 }
 
+export async function cancelDownload(
+  taskId: string,
+  signal?: AbortSignal,
+): Promise<DownloadTask> {
+  const response = await fetch(`/api/downloads/${encodeURIComponent(taskId)}/cancel`, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    signal,
+  });
+  const payload: unknown = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw toDownloadApiError(payload, response.status);
+  }
+  if (!isDownloadTask(payload)) {
+    throw new DownloadApiError(
+      "La respuesta del backend no tiene el formato esperado.",
+      "invalid_response",
+      response.status,
+    );
+  }
+  return payload;
+}
+
 function toDownloadApiError(payload: unknown, status: number): DownloadApiError {
   if (isRecord(payload) && isRecord(payload.error)) {
     const { code, message } = payload.error;
@@ -125,7 +149,7 @@ function toDownloadApiError(payload: unknown, status: number): DownloadApiError 
     }
   }
   return new DownloadApiError(
-    "No se ha podido iniciar la descarga. Prueba otra vez.",
+    "No se ha podido completar la operación. Prueba otra vez.",
     "unknown_error",
     status,
   );

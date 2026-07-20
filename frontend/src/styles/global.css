@@ -192,6 +192,16 @@ h1 {
   font-weight: 800;
 }
 
+.secondary-button--danger {
+  border-color: color-mix(in srgb, var(--danger), transparent 55%);
+  color: var(--danger);
+}
+
+.secondary-button--danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger), white 94%);
+}
+
 .notice {
   margin-top: 18px;
   border: 1px solid var(--border);
@@ -382,6 +392,15 @@ h1 {
   line-height: 1.5;
 }
 
+.download-card__message--error {
+  color: var(--danger);
+}
+
+.download-card__actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .about {
   margin-top: 28px;
   border-top: 1px solid var(--border);
@@ -479,6 +498,7 @@ h1 {
   }
 
   .download-button,
+  .download-card__actions button,
   .usage-dialog__actions,
   .usage-dialog__actions button {
     width: 100%;

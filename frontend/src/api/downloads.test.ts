@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  cancelDownload,
   createDownload,
   DownloadApiError,
   type DownloadCreateRequest,
@@ -88,6 +89,57 @@ describe("createDownload", () => {
     ).rejects.toMatchObject({
       name: "DownloadApiError",
       code: "format_unavailable",
+      status: 409,
+    } satisfies Partial<DownloadApiError>);
+  });
+});
+
+describe("cancelDownload", () => {
+  it("posts to the task cancellation endpoint", async () => {
+    const cancelledTask = {
+      ...task,
+      status: "cancelled",
+      queue_position: null,
+      current_attempt: { ...task.current_attempt, status: "cancelled" },
+    };
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(JSON.stringify(cancelledTask), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(cancelDownload(task.id)).resolves.toMatchObject({
+      id: task.id,
+      status: "cancelled",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(`/api/downloads/${task.id}/cancel`, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      signal: undefined,
+    });
+  });
+
+  it("preserves stable cancellation errors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "cancellation_not_allowed",
+              message: "Esta descarga ya no puede cancelarse desde la cola.",
+            },
+          }),
+          { status: 409, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+
+    await expect(cancelDownload(task.id)).rejects.toMatchObject({
+      name: "DownloadApiError",
+      code: "cancellation_not_allowed",
       status: 409,
     } satisfies Partial<DownloadApiError>);
   });

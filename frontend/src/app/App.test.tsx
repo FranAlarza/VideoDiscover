@@ -340,6 +340,99 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "Iniciando descarga" })).toBeDisabled();
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
+
+  it("cancels a queued download and hides the action in the terminal state", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("video-downloader.usage-notice-version", "2026-07-20");
+    const cancelledTask = {
+      ...downloadTask,
+      status: "cancelled",
+      queue_position: null,
+      current_attempt: {
+        ...downloadTask.current_attempt,
+        status: "cancelled",
+        finished_at: "2026-07-20T16:38:00Z",
+      },
+    };
+    const fetchMock = createDownloadFlowMock(
+      "video",
+      undefined,
+      Promise.resolve(
+        new Response(JSON.stringify(cancelledTask), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await inspectDemo(user);
+    await user.click(screen.getByRole("button", { name: "Descargar" }));
+    await user.click(await screen.findByRole("button", { name: "Cancelar descarga" }));
+
+    expect(await screen.findByText("Cancelada")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Cancelar descarga" })).toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(`/api/downloads/${downloadTask.id}/cancel`, {
+      method: "POST",
+      headers: { Accept: "application/json" },
+      signal: undefined,
+    });
+  });
+
+  it("prevents duplicate cancellation requests while cancellation is pending", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("video-downloader.usage-notice-version", "2026-07-20");
+    const pendingCancellation = new Promise<Response>(() => undefined);
+    const fetchMock = createDownloadFlowMock("video", undefined, pendingCancellation);
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await inspectDemo(user);
+    await user.click(screen.getByRole("button", { name: "Descargar" }));
+    await user.click(await screen.findByRole("button", { name: "Cancelar descarga" }));
+
+    const cancellingButton = screen.getByRole("button", { name: "Cancelando…" });
+    expect(cancellingButton).toBeDisabled();
+    await user.click(cancellingButton);
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        requestUrl(input).endsWith(`/${downloadTask.id}/cancel`),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("shows a cancellation error without losing the download card", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem("video-downloader.usage-notice-version", "2026-07-20");
+    const fetchMock = createDownloadFlowMock(
+      "video",
+      undefined,
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "cancellation_not_allowed",
+              message: "Esta descarga ya no puede cancelarse desde la cola.",
+            },
+          }),
+          { status: 409, headers: { "Content-Type": "application/json" } },
+        ),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    await inspectDemo(user);
+    await user.click(screen.getByRole("button", { name: "Descargar" }));
+    await user.click(await screen.findByRole("button", { name: "Cancelar descarga" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Esta descarga ya no puede cancelarse desde la cola.",
+    );
+    expect(screen.getAllByRole("heading", { name: "Demo descargable" })).toHaveLength(2);
+    expect(screen.getByRole("button", { name: "Cancelar descarga" })).toBeEnabled();
+  });
 });
 
 class FakeEventSource extends EventTarget {
@@ -387,6 +480,7 @@ async function inspectDemo(user: ReturnType<typeof userEvent.setup>) {
 function createDownloadFlowMock(
   outputType: "video" | "audio" = "video",
   downloadResponse?: Promise<Response>,
+  cancellationResponse?: Promise<Response>,
 ) {
   return vi.fn<typeof fetch>((input) => {
     if (input === "/health") {
@@ -403,6 +497,17 @@ function createDownloadFlowMock(
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),
+      );
+    }
+    if (requestUrl(input).endsWith(`/${downloadTask.id}/cancel`)) {
+      return (
+        cancellationResponse ??
+        Promise.resolve(
+          new Response(JSON.stringify(downloadTask), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        )
       );
     }
     if (downloadResponse) {
@@ -456,3 +561,8 @@ const downloadTask = {
   },
   attempts: [],
 };
+
+function requestUrl(input: RequestInfo | URL): string {
+  if (typeof input === "string") return input;
+  return input instanceof URL ? input.href : input.url;
+}

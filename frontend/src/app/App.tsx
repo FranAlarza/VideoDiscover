@@ -4,7 +4,12 @@ import {
   subscribeToDownloadEvents,
   type DownloadEventConnectionStatus,
 } from "@/api/downloadEvents";
-import { createDownload, DownloadApiError, type DownloadTask } from "@/api/downloads";
+import {
+  cancelDownload,
+  createDownload,
+  DownloadApiError,
+  type DownloadTask,
+} from "@/api/downloads";
 import { inspectMedia, MediaApiError, type MediaInspection } from "@/api/media";
 import { useBackendHealth } from "@/hooks/useBackendHealth";
 
@@ -50,6 +55,8 @@ export function App() {
   });
   const [downloadEventsStatus, setDownloadEventsStatus] =
     useState<DownloadEventConnectionStatus>("connecting");
+  const [cancellingTaskId, setCancellingTaskId] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const [inspectState, setInspectState] = useState<InspectState>({
     status: "idle",
     media: null,
@@ -100,6 +107,8 @@ export function App() {
 
     setInspectState({ status: "loading", media: null, error: null });
     setDownloadState({ status: "idle", task: null, error: null });
+    setCancellingTaskId(null);
+    setCancelError(null);
 
     try {
       const media = await inspectMedia(trimmedUrl);
@@ -137,6 +146,7 @@ export function App() {
         video_quality: outputMode === "video" ? selectedQuality : null,
         audio_bitrate: outputMode === "audio" ? audioBitrate : null,
       });
+      setCancelError(null);
       setDownloadState({ status: "success", task, error: null });
     } catch (error) {
       const message =
@@ -144,6 +154,39 @@ export function App() {
           ? error.message
           : "No se ha podido conectar con el backend.";
       setDownloadState({ status: "error", task: null, error: message });
+    }
+  }
+
+  async function handleCancelDownload() {
+    if (
+      downloadState.status !== "success" ||
+      cancellingTaskId === downloadState.task.id ||
+      !isActiveDownload(downloadState.task)
+    ) {
+      return;
+    }
+
+    const taskId = downloadState.task.id;
+    setCancellingTaskId(taskId);
+    setCancelError(null);
+
+    try {
+      const task = await cancelDownload(taskId);
+      setDownloadState((current) =>
+        current.status === "success" && current.task.id === taskId
+          ? { ...current, task }
+          : current,
+      );
+      if (!isActiveDownload(task)) {
+        setCancellingTaskId(null);
+      }
+    } catch (error) {
+      const message =
+        error instanceof DownloadApiError
+          ? error.message
+          : "No se ha podido conectar con el backend.";
+      setCancelError(message);
+      setCancellingTaskId(null);
     }
   }
 
@@ -170,6 +213,10 @@ export function App() {
   const canChooseVideo = qualityOptions.length > 0;
   const canChooseAudio = inspectState.media?.audio_available === true;
   const isCreatingDownload = downloadState.status === "loading";
+  const isCancellingDownload =
+    downloadState.status === "success" &&
+    isActiveDownload(downloadState.task) &&
+    cancellingTaskId === downloadState.task.id;
 
   return (
     <main className="app-shell">
@@ -371,11 +418,33 @@ export function App() {
                 {downloadState.task.current_attempt.failure.message}
               </p>
             ) : null}
+            {cancelError ? (
+              <p
+                className="download-card__message download-card__message--error"
+                role="alert"
+              >
+                {cancelError}
+              </p>
+            ) : null}
             {downloadEventsStatus === "disconnected" &&
             isActiveDownload(downloadState.task) ? (
               <p className="download-card__message">
                 Reconectando con el backend para actualizar el progreso...
               </p>
+            ) : null}
+            {isActiveDownload(downloadState.task) ? (
+              <div className="download-card__actions">
+                <button
+                  className="secondary-button secondary-button--danger"
+                  type="button"
+                  disabled={isCancellingDownload}
+                  onClick={() => {
+                    void handleCancelDownload();
+                  }}
+                >
+                  {isCancellingDownload ? "Cancelando…" : "Cancelar descarga"}
+                </button>
+              </div>
             ) : null}
           </section>
         ) : null}
