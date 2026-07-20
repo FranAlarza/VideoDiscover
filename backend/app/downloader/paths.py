@@ -14,6 +14,9 @@ from app.downloader.executor import DownloadExecutionError
 _UNSAFE_FILENAME = re.compile(r"[\x00-\x1f/:\\]+")
 _REPEATED_SPACE = re.compile(r"\s+")
 _MAX_STEM_LENGTH = 160
+_WORKSPACE_NAME = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-[a-z0-9_]{8}$"
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +109,30 @@ def cleanup_workspace(workspace: DownloadWorkspace) -> None:
     """Remove only the task-scoped temporary directory."""
     _require_contained(workspace.staging_directory, workspace.staging_directory.parent)
     shutil.rmtree(workspace.staging_directory, ignore_errors=False)
+
+
+def cleanup_orphaned_workspaces(temporary_root: Path) -> int:
+    """Remove only application-shaped workspaces before the worker starts."""
+    root = temporary_root.expanduser().resolve()
+    if not root.exists():
+        return 0
+    if not root.is_dir():
+        raise DownloadExecutionError(
+            "output_not_writable", "La carpeta temporal no es válida."
+        )
+    removed = 0
+    for candidate in root.iterdir():
+        if (
+            not _WORKSPACE_NAME.fullmatch(candidate.name)
+            or candidate.is_symlink()
+            or not candidate.is_dir()
+        ):
+            continue
+        resolved = candidate.resolve(strict=True)
+        _require_contained(resolved, root)
+        shutil.rmtree(resolved, ignore_errors=False)
+        removed += 1
+    return removed
 
 
 def _require_contained(candidate: Path, root: Path) -> None:

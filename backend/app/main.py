@@ -19,7 +19,7 @@ from app.database.migrations import upgrade_database
 from app.database.repository import SqliteDownloadRepository, create_sqlite_engine
 from app.database.settings_repository import SqliteSettingsRepository
 from app.downloader.executor import SimulatedDownloadExecutor
-from app.downloader.paths import DownloadPathPolicy
+from app.downloader.paths import DownloadPathPolicy, cleanup_orphaned_workspaces
 from app.downloader.repository import InMemoryDownloadRepository
 from app.downloader.service import DownloadTaskService
 from app.downloader.worker import DownloadWorker
@@ -116,6 +116,8 @@ def create_app(
         application.state.download_file_action_service = runtime_file_actions
         application.state.local_settings_service = runtime_local_settings
         application.state.directory_chooser = runtime_directory_chooser
+        if runtime_settings.environment != "test":
+            cleanup_orphaned_workspaces(runtime_settings.download_temporary_root)
         if runtime_local_settings is not None:
             local_settings = await runtime_local_settings.get()
             validated_root = DownloadDirectoryValidator(

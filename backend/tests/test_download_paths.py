@@ -7,6 +7,7 @@ from app.downloader.executor import DownloadExecutionError
 from app.downloader.paths import (
     DownloadPathPolicy,
     choose_available_path,
+    cleanup_orphaned_workspaces,
     cleanup_workspace,
     publish_file,
     sanitize_filename_stem,
@@ -76,3 +77,27 @@ def test_publish_file_preserves_existing_output_and_cleans_workspace(
     assert published.name == "Example (1).mp4"
     assert published.read_bytes() == b"new"
     assert not workspace.staging_directory.exists()
+
+
+def test_startup_cleanup_removes_only_application_workspaces(tmp_path: Path) -> None:
+    temporary_root = tmp_path / "temporary"
+    temporary_root.mkdir()
+    orphan = temporary_root / "efad5770-4246-4ffd-a8e7-26d286b63a5c-rw6gut1s"
+    orphan.mkdir()
+    (orphan / "media.mp4.part").write_bytes(b"partial")
+    unrelated_directory = temporary_root / "keep-me"
+    unrelated_directory.mkdir()
+    unrelated_file = temporary_root / "notes.txt"
+    unrelated_file.write_text("keep")
+    external = tmp_path / "external"
+    external.mkdir()
+    symlink = temporary_root / "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa-aaaaaaaa"
+    symlink.symlink_to(external)
+
+    removed = cleanup_orphaned_workspaces(temporary_root)
+
+    assert removed == 1
+    assert not orphan.exists()
+    assert unrelated_directory.is_dir()
+    assert unrelated_file.read_text() == "keep"
+    assert symlink.is_symlink()
