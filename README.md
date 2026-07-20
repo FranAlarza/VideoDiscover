@@ -10,9 +10,9 @@ La fase 1 está completada: el backend valida y analiza URLs autorizadas de
 YouTube y TikTok sin descargar contenido. Consulta
 [`docs/phase-1.md`](docs/phase-1.md) para ver contratos y evidencias.
 
-La fase 2 está en curso. Ya existe el modelo de tarea, una cola FIFO con un único
-worker, progreso y cancelación mediante un ejecutor simulado; consulta
-[`docs/phase-2.md`](docs/phase-2.md).
+La fase 2 del backend está completada. La fase 3 de interfaz está en curso con el
+entorno React, TypeScript y Vite operativo; consulta
+[`docs/phase-2.md`](docs/phase-2.md) y [`docs/phase-3.md`](docs/phase-3.md).
 
 ## Estructura
 
@@ -57,3 +57,23 @@ uv run alembic upgrade head
 El endpoint `GET /api/events` publica una instantánea inicial y cambios de tareas
 mediante Server-Sent Events. Admite `Last-Event-ID`, keepalive y solicita una
 resincronización si un cliente lento pierde eventos.
+
+## Frontend
+
+Requiere Node.js 24:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Vite escucha únicamente en `http://127.0.0.1:5173` y envía `/api` y `/health` al
+backend local en el puerto 8000. Las comprobaciones disponibles son:
+
+```bash
+npm run build
+npm test
+npm run lint
+npm run format
+```
