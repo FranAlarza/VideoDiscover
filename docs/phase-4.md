@@ -19,3 +19,11 @@ Estado: implementado como base interna y conectado al ejecutor.
 - [x] Mantener «Abrir» y «Mostrar en Finder» ligados a la ubicación original.
 - [x] Exponer la configuración mediante una API local validada.
 - [x] Añadir selección nativa de carpeta en macOS y conectarla a la interfaz.
+
+## 4.2 Cierre verificable del MVP
+
+- [x] Añadir un comando único para las comprobaciones automáticas.
+- [x] Crear un registro explícito para los resultados de aceptación.
+- [ ] Ejecutar y registrar AC-01 a AC-10 sobre la versión candidata.
+- [ ] Reproducir la instalación y el flujo en una segunda instalación limpia.
+- [ ] Confirmar que no quedan fallos conocidos críticos o altos.

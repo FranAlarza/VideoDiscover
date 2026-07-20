@@ -14,6 +14,8 @@ La fase 2 del backend está completada. La fase 3 de interfaz ya incluye anális
 descargas reales, progreso, cancelación, historial, reintentos y acciones sobre
 archivos completados; consulta
 [`docs/phase-2.md`](docs/phase-2.md) y [`docs/phase-3.md`](docs/phase-3.md).
+La fase 4 incorpora una carpeta de descarga configurable desde la interfaz. Su
+cierre se registra en [`docs/phase-4.md`](docs/phase-4.md).
 
 ## Estructura
 
@@ -94,3 +96,15 @@ npm test
 npm run lint
 npm run format
 ```
+
+## Verificación completa
+
+Para ejecutar de una vez todas las comprobaciones automáticas del MVP:
+
+```bash
+./scripts/check.sh
+```
+
+Las pruebas reales de plataforma y reproducción siguen el procedimiento de
+[`docs/acceptance-criteria.md`](docs/acceptance-criteria.md) y se registran en
+[`docs/acceptance-results.md`](docs/acceptance-results.md).
