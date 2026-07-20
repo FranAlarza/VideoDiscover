@@ -13,6 +13,7 @@ from app.downloader.domain import (
 from app.downloader.executor import DownloadExecutionError
 from app.downloader.repository import InMemoryDownloadRepository
 from app.downloader.worker import DownloadWorker
+from app.events.broker import DownloadEventBroker
 from app.models.media import Platform
 
 
@@ -122,5 +123,36 @@ def test_worker_interrupts_previously_active_tasks_on_start() -> None:
 
         assert stored is not None
         assert stored.status is DownloadStatus.INTERRUPTED
+
+    asyncio.run(scenario())
+
+
+def test_worker_publishes_state_changes_to_event_broker() -> None:
+    async def scenario() -> None:
+        from app.downloader.executor import SimulatedDownloadExecutor
+
+        repository = InMemoryDownloadRepository()
+        task = _task("events")
+        await repository.create(task)
+        broker = DownloadEventBroker(progress_interval_seconds=0)
+        subscription = await broker.subscribe()
+        worker = DownloadWorker(
+            repository,
+            SimulatedDownloadExecutor(step_delay_seconds=0),
+            broker,
+        )
+
+        await worker.start()
+        await _wait_for_status(repository, task, DownloadStatus.COMPLETED)
+        await worker.shutdown()
+        events = []
+        while not subscription.queue.empty():
+            events.append(subscription.queue.get_nowait())
+
+        statuses = [event.data["status"] for event in events]
+        assert statuses[0] == "downloading"
+        assert "processing" in statuses
+        assert statuses[-1] == "completed"
+        assert all("canonical_url" not in event.data for event in events)
 
     asyncio.run(scenario())

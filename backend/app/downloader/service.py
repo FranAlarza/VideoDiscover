@@ -12,6 +12,7 @@ from app.downloader.domain import (
 )
 from app.downloader.repository import DownloadRepository
 from app.downloader.worker import DownloadWorker
+from app.events.broker import DownloadEventBroker
 from app.media.inspection import MediaInspectionService
 from app.media.validation import MediaUrlValidationService
 from app.models.downloads import (
@@ -41,11 +42,13 @@ class DownloadTaskService:
         validator: MediaUrlValidationService,
         inspection_service: MediaInspectionService,
         worker: DownloadWorker | None = None,
+        event_broker: DownloadEventBroker | None = None,
     ) -> None:
         self._repository = repository
         self._validator = validator
         self._inspection_service = inspection_service
         self._worker = worker
+        self._event_broker = event_broker
         self._retry_lock = asyncio.Lock()
 
     async def create(self, request: DownloadCreateRequest) -> DownloadTaskResponse:
@@ -71,10 +74,14 @@ class DownloadTaskService:
             selection=selection,
         )
         created = await self._repository.create(task)
+        tasks = await self._repository.list()
+        queue_position = _queue_position(created, tasks)
+        await self._publish(
+            created, name="download.created", queue_position=queue_position
+        )
         if self._worker is not None:
             self._worker.notify()
-        tasks = await self._repository.list()
-        return _to_response(created, _queue_position(created, tasks))
+        return _to_response(created, queue_position)
 
     async def get(self, task_id: UUID) -> DownloadTaskResponse:
         task = await self._repository.get(task_id)
@@ -96,6 +103,7 @@ class DownloadTaskService:
         if task.status is DownloadStatus.QUEUED:
             task.current_attempt.transition_to(DownloadStatus.CANCELLED)
             saved = await self._repository.save(task)
+            await self._publish(saved, force=True)
             return _to_response(saved, None)
         if (
             task.status in {DownloadStatus.DOWNLOADING, DownloadStatus.PROCESSING}
@@ -137,10 +145,27 @@ class DownloadTaskService:
             task.title = inspection.title
             task.start_new_attempt()
             saved = await self._repository.save(task)
+        await self._publish(saved, force=True)
         if self._worker is not None:
             self._worker.notify()
         tasks = await self._repository.list()
         return _to_response(saved, _queue_position(saved, tasks))
+
+    async def _publish(
+        self,
+        task: DownloadTask,
+        *,
+        name: str = "download.updated",
+        queue_position: int | None = None,
+        force: bool = False,
+    ) -> None:
+        if self._event_broker is not None:
+            await self._event_broker.publish(
+                task,
+                name=name,
+                queue_position=queue_position,
+                force=force,
+            )
 
 
 def _not_found() -> DownloadApplicationError:

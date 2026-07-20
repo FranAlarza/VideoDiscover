@@ -53,3 +53,7 @@ migraciones también pueden ejecutarse manualmente desde `backend/`:
 ```bash
 uv run alembic upgrade head
 ```
+
+El endpoint `GET /api/events` publica una instantánea inicial y cambios de tareas
+mediante Server-Sent Events. Admite `Last-Event-ID`, keepalive y solicita una
+resincronización si un cliente lento pierde eventos.

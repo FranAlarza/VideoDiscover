@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.diagnostics import router as diagnostics_router
 from app.api.downloads import router as downloads_router
+from app.api.events import router as events_router
 from app.api.health import router as health_router
 from app.api.media import router as media_router
 from app.config import Settings
@@ -21,6 +22,7 @@ from app.downloader.repository import InMemoryDownloadRepository
 from app.downloader.service import DownloadTaskService
 from app.downloader.worker import DownloadWorker
 from app.downloader.yt_dlp_executor import YtDlpDownloadExecutor
+from app.events.broker import DownloadEventBroker
 from app.media.inspection import MediaInspectionService
 from app.media.validation import MediaUrlValidationService
 from app.system.diagnostics import DependencyDiagnosticsService
@@ -42,6 +44,7 @@ def create_app(
         runtime_media_url_validator
     )
     runtime_worker = download_worker
+    runtime_event_broker = DownloadEventBroker()
     if download_task_service is None:
         if runtime_settings.environment == "test":
             repository = InMemoryDownloadRepository()
@@ -63,12 +66,13 @@ def create_app(
                     ),
                     node_binary=node_binary,
                 )
-            runtime_worker = DownloadWorker(repository, executor)
+            runtime_worker = DownloadWorker(repository, executor, runtime_event_broker)
         runtime_download_tasks = DownloadTaskService(
             repository,
             runtime_media_url_validator,
             runtime_media_inspection,
             runtime_worker,
+            runtime_event_broker,
         )
     else:
         runtime_download_tasks = download_task_service
@@ -82,6 +86,7 @@ def create_app(
         application.state.media_inspection_service = runtime_media_inspection
         application.state.download_task_service = runtime_download_tasks
         application.state.download_worker = runtime_worker
+        application.state.download_event_broker = runtime_event_broker
         if runtime_worker is not None:
             await runtime_worker.start()
         try:
@@ -110,6 +115,7 @@ def create_app(
     application.include_router(diagnostics_router)
     application.include_router(media_router)
     application.include_router(downloads_router)
+    application.include_router(events_router)
     return application
 
 

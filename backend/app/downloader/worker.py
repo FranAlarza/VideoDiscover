@@ -11,14 +11,19 @@ from app.downloader.executor import (
     DownloadExecutor,
 )
 from app.downloader.repository import DownloadRepository
+from app.events.broker import DownloadEventBroker
 
 
 class DownloadWorker:
     def __init__(
-        self, repository: DownloadRepository, executor: DownloadExecutor
+        self,
+        repository: DownloadRepository,
+        executor: DownloadExecutor,
+        event_broker: DownloadEventBroker | None = None,
     ) -> None:
         self._repository = repository
         self._executor = executor
+        self._event_broker = event_broker
         self._wake_event = asyncio.Event()
         self._stop_event = asyncio.Event()
         self._runner: asyncio.Task[None] | None = None
@@ -63,6 +68,7 @@ class DownloadWorker:
             self._active_id = task.id
             self._active_cancel = asyncio.Event()
             try:
+                await self._publish(task, force=True)
                 await self._execute(task)
             finally:
                 self._active_id = None
@@ -76,10 +82,12 @@ class DownloadWorker:
         async def update_progress(progress: DownloadProgress) -> None:
             task.current_attempt.update_progress(progress)
             await self._repository.update_progress(task)
+            await self._publish(task)
 
         async def begin_processing() -> None:
             task.current_attempt.transition_to(DownloadStatus.PROCESSING)
             await self._repository.save(task)
+            await self._publish(task, force=True)
 
         try:
             result = await self._executor.execute(
@@ -105,3 +113,9 @@ class DownloadWorker:
         else:
             task.current_attempt.transition_to(DownloadStatus.COMPLETED, result=result)
         await self._repository.save(task)
+        await self._publish(task, force=True)
+
+    async def _publish(self, task, *, force: bool = False) -> None:
+        if self._event_broker is None:
+            return
+        await self._event_broker.publish(task, force=force)

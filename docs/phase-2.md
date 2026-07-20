@@ -244,3 +244,49 @@ Estado de implementación: completado.
 - Dos solicitudes concurrentes crean exactamente un intento.
 - Historial completo conservado tras reconstruir desde SQLite.
 - Endpoint verificado con historial `interrupted` → `queued`.
+
+## 2.6 Eventos de estado mediante SSE
+
+Estado de implementación: completado y flujo manual verificado.
+
+- [x] Añadir `GET /api/events` con `text/event-stream`.
+- [x] Enviar una instantánea completa al conectar sin historial recuperable.
+- [x] Emitir `download.created` y `download.updated` con identificador secuencial.
+- [x] Publicar estados desde el worker y comandos desde el servicio.
+- [x] Limitar la frecuencia de progreso sin perder estados terminales.
+- [x] Mantener una historia acotada para `Last-Event-ID`.
+- [x] Solicitar `downloads.resync` cuando un cliente lento pierde eventos.
+- [x] Enviar keepalive y detectar desconexiones.
+- [x] Usar una cola limitada por suscriptor sin bloquear descargas.
+- [x] Eliminar siempre la suscripción al desconectar.
+- [x] Excluir URLs, rutas internas y datos sensibles de los eventos.
+
+### Contrato resumido
+
+```text
+event: downloads.snapshot  # estado completo al conectar
+event: download.created    # tarea nueva
+event: download.updated    # progreso o transición
+event: downloads.resync    # el cliente debe consultar GET /api/downloads
+```
+
+Cada actualización incluye `id`, `occurred_at` y la representación pública de la
+tarea con selección, progreso, resultado e historial de intentos.
+
+### Evidencia automatizada
+
+- Snapshot/replay, huecos de historial y `Last-Event-ID` verificados.
+- Cola lenta acotada con señal de resincronización.
+- Progreso repetido limitado y evento terminal forzado.
+- Serialización SSE y ausencia de URL canónica verificadas.
+- Suite completa: 125 pruebas aprobadas; Ruff lint y formato aprobados.
+
+### Evidencia manual — 20 de julio de 2026
+
+- La conexión recibió `downloads.snapshot` seguida de un keepalive.
+- Una tarea simulada produjo eventos consecutivos con identificadores 1 a 5.
+- Los estados observados fueron `queued`, `downloading`, `processing` y
+  `completed` en el orden esperado.
+- La limitación omitió progreso redundante, conservando una actualización parcial,
+  procesamiento al 100 % y el evento terminal con resultado.
+- La carga no incluyó URL original, URL canónica ni rutas físicas.
