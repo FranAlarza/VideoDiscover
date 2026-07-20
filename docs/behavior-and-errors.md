@@ -89,15 +89,31 @@ La disponibilidad se comprueba inmediatamente antes de reservar la salida. Tempo
 |---|---|---|---|
 | `empty_url` | URL vacía | Introduce una URL. | Volver al campo |
 | `invalid_url` | URL mal formada | La dirección introducida no es válida. | Corregir URL |
+| `url_too_long` | URL por encima del límite | La dirección introducida es demasiado larga. | Usar una URL normal |
 | `unsupported_scheme` | Protocolo distinto de HTTP/HTTPS | Solo se admiten direcciones HTTP o HTTPS. | Corregir URL |
+| `embedded_credentials` | Credenciales incluidas en la URL | La dirección no puede incluir credenciales. | Usar una URL pública |
 | `unsupported_platform` | Plataforma fuera del MVP | Esta plataforma no está soportada en el MVP. | Usar otra URL |
 | `playlist_not_supported` | La URL representa una lista | Las listas de reproducción todavía no están soportadas. | Usar la URL de un vídeo |
+| `invalid_media_url` | No identifica un vídeo individual | La dirección no corresponde a un vídeo individual válido. | Usar el enlace del vídeo |
+| `blocked_network_target` | Destino DNS/IP no público | La dirección apunta a un destino de red no permitido. | Usar una URL pública oficial |
+| `dns_resolution_failed` | DNS no verificable | No se ha podido verificar el destino de la dirección. | Reintentar |
+| `redirect_not_allowed` | Redirección fuera de política | El enlace redirige a un destino no permitido. | Usar la URL canónica |
+| `too_many_redirects` | Supera el límite de redirecciones | El enlace contiene demasiadas redirecciones. | Usar la URL canónica |
+| `redirect_loop` | Bucle de redirecciones | El enlace contiene un bucle de redirecciones. | Usar la URL canónica |
+| `short_link_unresolved` | Enlace corto no resoluble | No se ha podido resolver el enlace corto. | Reintentar o usar la URL canónica |
 | `private_media` | Contenido privado o con login | Este contenido es privado o requiere iniciar sesión. | Sin reintento directo |
 | `media_unavailable` | Eliminado o no disponible | El contenido ya no está disponible. | Sin reintento directo |
 | `region_restricted` | Bloqueo geográfico | Este contenido no está disponible desde tu ubicación. | Sin reintento directo |
 | `age_restricted` | Requiere verificación | Este contenido requiere una verificación no disponible en el MVP. | Sin reintento directo |
 | `drm_protected` | DRM detectado | El contenido está protegido y no puede descargarse. | Sin reintento directo |
 | `ffmpeg_missing` | FFmpeg no está disponible | FFmpeg no está instalado o no se encuentra. | Mostrar ayuda de instalación |
+| `ffmpeg_incompatible` | FFmpeg está fuera de la línea admitida | La versión instalada de FFmpeg no es compatible. | Actualizar FFmpeg |
+| `ffprobe_missing` | ffprobe no está disponible | ffprobe no está instalado o no se encuentra. | Mostrar ayuda de instalación |
+| `ffprobe_incompatible` | ffprobe está fuera de la línea admitida | La versión instalada de ffprobe no es compatible. | Actualizar FFmpeg |
+| `node_missing` | Node.js no está disponible | Node.js no está instalado o no se encuentra. | Mostrar ayuda de instalación |
+| `node_incompatible` | Node.js está fuera de la línea admitida | La versión instalada de Node.js no es compatible. | Instalar Node.js 24 LTS |
+| `yt_dlp_missing` | yt-dlp no está disponible | El motor de descarga no está instalado. | Reparar instalación |
+| `yt_dlp_incompatible` | yt-dlp no es compatible | El motor de descarga debe actualizarse. | Actualizar dependencias |
 | `format_unavailable` | Cambió la oferta de formatos | La calidad seleccionada ya no está disponible. | Analizar otra vez |
 | `disk_full` | Espacio insuficiente | No hay suficiente espacio en el disco. | Liberar espacio |
 | `output_not_writable` | Sin permisos de escritura | No se puede escribir en la carpeta seleccionada. | Cambiar carpeta |
