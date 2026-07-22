@@ -29,7 +29,10 @@ from app.media.inspection import MediaInspectionService
 from app.media.validation import MediaUrlValidationService
 from app.system.diagnostics import DependencyDiagnosticsService
 from app.system.directory_chooser import MacOSDirectoryChooser
-from app.system.download_directory import DownloadDirectoryValidator
+from app.system.download_directory import (
+    DownloadDirectoryError,
+    DownloadDirectoryValidator,
+)
 from app.system.file_actions import DownloadFileActionService
 from app.system.settings_service import LocalSettingsService
 
@@ -120,10 +123,17 @@ def create_app(
             cleanup_orphaned_workspaces(runtime_settings.download_temporary_root)
         if runtime_local_settings is not None:
             local_settings = await runtime_local_settings.get()
-            validated_root = DownloadDirectoryValidator(
+            validator = DownloadDirectoryValidator(
                 temporary_root=runtime_settings.download_temporary_root
-            ).validate(local_settings.download_output_root)
-            if runtime_worker is not None:
+            )
+            recovered_default = False
+            try:
+                validated_root = validator.validate(local_settings.download_output_root)
+            except DownloadDirectoryError:
+                recovered = await runtime_local_settings.recover_default_output_root()
+                validated_root = recovered.download_output_root
+                recovered_default = True
+            if runtime_worker is not None and not recovered_default:
                 runtime_worker.update_output_root(validated_root)
             if sqlite_repository is not None:
                 await sqlite_repository.backfill_result_output_directory(validated_root)

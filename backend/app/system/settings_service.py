@@ -54,3 +54,10 @@ class LocalSettingsService:
         if self._worker is not None:
             self._worker.update_output_root(validated)
         return await self._settings_repository.update_download_output_root(validated)
+
+    async def recover_default_output_root(self) -> LocalSettings:
+        """Restore the safe local default when a persisted volume is unavailable."""
+        validated = self._directory_validator.validate(self._default_output_root)
+        if self._worker is not None:
+            self._worker.update_output_root(validated)
+        return await self._settings_repository.update_download_output_root(validated)

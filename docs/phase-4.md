@@ -25,6 +25,7 @@ Estado: implementado como base interna y conectado al ejecutor.
 - [x] Añadir un comando único para las comprobaciones automáticas.
 - [x] Crear un registro explícito para los resultados de aceptación.
 - [x] Limpiar al arrancar workspaces huérfanos reconocibles tras una interrupción.
+- [x] Recuperar la carpeta local si un volumen externo configurado no está disponible.
 - [x] Ejecutar y registrar AC-01 a AC-10 sobre la versión candidata.
 - [ ] Reproducir la instalación y el flujo en una segunda instalación limpia.
 - [x] Confirmar que no quedan fallos conocidos críticos o altos.

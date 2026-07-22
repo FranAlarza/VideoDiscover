@@ -126,6 +126,39 @@ def test_settings_service_updates_worker_before_persisting_path(tmp_path: Path) 
     asyncio.run(scenario())
 
 
+def test_settings_service_recovers_the_local_default_for_startup(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        downloads = InMemoryDownloadRepository()
+        database_path = tmp_path / "settings.sqlite3"
+        upgrade_database(database_path)
+        settings_repository = SqliteSettingsRepository(
+            create_sqlite_engine(database_path)
+        )
+        worker = Mock()
+        default_root = tmp_path / "local-downloads"
+        service = LocalSettingsService(
+            settings_repository,
+            downloads,
+            _validator(tmp_path),
+            default_output_root=default_root,
+            worker=worker,
+        )
+        await settings_repository.update_download_output_root(
+            Path("/Volumes/Disconnected/Downloads")
+        )
+
+        recovered = await service.recover_default_output_root()
+        persisted = await service.get()
+
+        assert recovered.download_output_root == default_root.resolve()
+        assert persisted == recovered
+        worker.update_output_root.assert_called_once_with(default_root.resolve())
+
+    asyncio.run(scenario())
+
+
 def _service(
     tmp_path: Path, downloads: InMemoryDownloadRepository
 ) -> LocalSettingsService:
